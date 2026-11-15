@@ -1,0 +1,486 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Organization ─────────────────────────────────────────────────────────────
+
+model Department {
+  id        String @id @default(cuid())
+  name      String @unique
+  code      String @unique
+  managerId String? // department head (MANAGER role user)
+  manager   User?  @relation("DeptManager", fields: [managerId], references: [id])
+  shiftId   String? // default shift for the department
+  shift     Shift? @relation("DeptShift", fields: [shiftId], references: [id])
+  users     User[]
+  teams     Team[]
+
+  @@index([managerId])
+}
+
+model Team {
+  id           String     @id @default(cuid())
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  teamLeadId   String? // owning team lead (TEAM_LEAD role user)
+  teamLead     User?      @relation("TeamLeadOfTeam", fields: [teamLeadId], references: [id])
+  shiftId      String?
+  shift        Shift?     @relation("TeamShift", fields: [shiftId], references: [id])
+  users        User[]
+
+  @@index([departmentId])
+  @@index([teamLeadId])
+}
+
+model Shift {
+  id              String   @id @default(cuid())
+  name            String
+  startTime       String // "09:00" — HH:mm in Karachi
+  endTime         String // "18:00"
+  breakMinutes    Int      @default(60)
+  graceMinutes    Int      @default(15)
+  expectedMinutes Int      @default(540)
+  workingDays     String   @default("[1,2,3,4,5]") // JSON array of ISO weekdays 1=Mon..7=Sun
+  isActive        Boolean  @default(true)
+  users           User[]
+  departments     Department[] @relation("DeptShift")
+  teams           Team[]       @relation("TeamShift")
+}
+
+model Holiday {
+  id   String @id @default(cuid())
+  date String @unique // "YYYY-MM-DD"
+  name String
+}
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String // JSON payload
+}
+
+// ─── People ───────────────────────────────────────────────────────────────────
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  fullName         String
+  fatherName       String?
+  motherName       String?
+  phone            String?
+  personalEmail    String?
+  cnic             String?
+  cnicExpiry       String? // "YYYY-MM-DD"
+  drivingLicense   String?
+  passportNo       String?
+  passportExpiry   String? // "YYYY-MM-DD"
+  dateOfBirth      DateTime?
+  gender           String? // Male | Female
+  maritalStatus    String? // Single | Married | Divorced | Widowed
+  bloodGroup       String?
+  religion         String?
+  nationality      String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  address          String?
+  role             String // SUPER_ADMIN | HR_MANAGER | ACCOUNTANT | MANAGER | TEAM_LEAD | EMPLOYEE
+  employeeCode     String   @unique // ZKTeco PIN
+  designation      String
+  departmentId     String?
+  department       Department? @relation(fields: [departmentId], references: [id])
+  teamId           String?
+  team             Team?    @relation(fields: [teamId], references: [id])
+  teamLeadId       String? // first approver
+  teamLead         User?    @relation("TeamLeadLink", fields: [teamLeadId], references: [id])
+  directs          User[]   @relation("TeamLeadLink")
+  managerId        String? // second approver / department head
+  manager          User?    @relation("ManagerLink", fields: [managerId], references: [id])
+  managedUsers     User[]   @relation("ManagerLink")
+  shiftId          String?
+  shift            Shift?   @relation(fields: [shiftId], references: [id])
+  joiningDate      DateTime
+  employmentStatus String   @default("Permanent") // Permanent | Probation | Contract
+  avatarColor      String   @default("#0D9488")
+  baseSalary       Float    @default(0)
+  hrAllowance      Float    @default(0)
+  utilityAllowance Float    @default(0)
+  bankName         String?
+  bankIban         String?
+  isActive         Boolean  @default(true)
+
+  // MFA & anti-abuse
+  mfaEnabled     Boolean @default(false)
+  mfaSecret      String? // base32
+  backupCodes    String? // JSON array of sha256 hashes
+  failedAttempts Int     @default(0)
+  lockedUntil    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendanceLogs   AttendanceLog[]
+  attendanceAudits AttendanceAudit[]    @relation("AttendanceAdmin")
+  requests         Request[]
+  attRequests      AttendanceRequest[]
+  attApprovals     AttendanceApproval[] @relation("AttApprover")
+  balances         LeaveBalance[]
+  approvalsGiven   ApprovalLog[]
+  payslips         Payslip[]
+  payrollRuns      PayrollRun[]
+  loans            Loan[]
+  adjustments      MonthlyAdjustment[]
+  uploads          Upload[]
+  notifications    Notification[]
+  refreshTokens    RefreshToken[]
+  biometricPunches BiometricPunch[]
+  teamsLed         Team[] @relation("TeamLeadOfTeam")
+  managedDepartments Department[] @relation("DeptManager")
+}
+
+// ─── Leave & Requests ─────────────────────────────────────────────────────────
+
+model LeaveType {
+  id                  String  @id @default(cuid())
+  name                String  @unique
+  code                String  @unique
+  annualQuota         Float   @default(0)
+  colorCode           String  @default("#64748B")
+  monthlyCap          Int? // hard rule: max days per calendar month (0/null = unlimited)
+  attachmentThreshold Int? // rule: beyond N availed days in month, require certificate
+  isPaid              Boolean @default(true)
+  balances            LeaveBalance[]
+  requests            Request[]
+}
+
+model LeaveBalance {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  leaveTypeId  String
+  leaveType    LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year         Int
+  carryForward Float     @default(0)
+  availed      Float     @default(0)
+  pending      Float     @default(0)
+  lapsed       Float     @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, leaveTypeId, year])
+}
+
+model Request {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id])
+  type           String // LEAVE | OFFICIAL_DUTY | TRAVEL
+  leaveTypeId    String?
+  leaveType      LeaveType? @relation(fields: [leaveTypeId], references: [id])
+  startDate      DateTime
+  endDate        DateTime
+  isShortLeave   Boolean    @default(false)
+  shortHours     Float      @default(0)
+  dayCount       Float      @default(1)
+  reason         String
+  attachmentId   String? // Upload.id — medical certificate etc.
+  attachment     Upload?    @relation(fields: [attachmentId], references: [id])
+  status         String     @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
+  currentStage   String     @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  approvals      ApprovalLog[]
+}
+
+model ApprovalLog {
+  id         String   @id @default(cuid())
+  requestId  String
+  request    Request  @relation(fields: [requestId], references: [id])
+  approverId String
+  approver   User     @relation(fields: [approverId], references: [id])
+  level      String // TEAM_LEAD | MANAGER | HR | ADMIN
+  action     String // APPROVED | REJECTED
+  comment    String?
+  createdAt  DateTime @default(now())
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
+
+model AttendanceLog {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  dateKey           String // "YYYY-MM-DD"
+  checkIn           DateTime?
+  checkOut          DateTime?
+  status            String // PRESENT | MISSING | ABSENT | SHORT_DURATION | DAY_OFF | WFH | FULL_LEAVE | SHORT_LEAVE | OFFICIAL_DUTY | TRAVEL | WEEKEND | HOLIDAY
+  expectedMinutes   Int       @default(0)
+  workedMinutes     Int       @default(0)
+  shortMinutes      Int       @default(0)
+  lateMinutes       Int       @default(0)
+  earlyMinutes      Int       @default(0)
+  breakMinutes      Int       @default(0)
+  isWFH             Boolean   @default(false)
+  isManuallyUpdated Boolean   @default(false)
+  source            String    @default("AUTO") // AUTO | BIOMETRIC | MANUAL | SYSTEM
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  breaks            BreakLog[]
+  audits            AttendanceAudit[]
+
+  @@unique([userId, dateKey])
+}
+
+model BreakLog {
+  id           String        @id @default(cuid())
+  attendanceId String
+  attendance   AttendanceLog @relation(fields: [attendanceId], references: [id])
+  startTime    DateTime
+  endTime      DateTime?
+  minutes      Int           @default(0)
+}
+
+model AttendanceAudit {
+  id           String        @id @default(cuid())
+  attendanceId String
+  attendance   AttendanceLog @relation(fields: [attendanceId], references: [id])
+  adminId      String
+  admin        User          @relation("AttendanceAdmin", fields: [adminId], references: [id])
+  field        String
+  oldValue     String?
+  newValue     String?
+  reason       String
+  createdAt    DateTime      @default(now())
+}
+
+// ─── 3-Tier Manual Attendance Regularization ──────────────────────────────────
+
+model AttendanceRequest {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  date              String // "YYYY-MM-DD"
+  requestedCheckIn  String // "HH:mm"
+  requestedCheckOut String // "HH:mm"
+  reason            String
+  status            String   @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
+  currentStage      String   @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  approvals         AttendanceApproval[]
+}
+
+model AttendanceApproval {
+  id         String            @id @default(cuid())
+  requestId  String
+  request    AttendanceRequest @relation(fields: [requestId], references: [id])
+  approverId String
+  approver   User              @relation("AttApprover", fields: [approverId], references: [id])
+  level      String // TEAM_LEAD | MANAGER | HR | ADMIN
+  action     String // APPROVED | REJECTED
+  comment    String?
+  createdAt  DateTime          @default(now())
+}
+
+// ─── Biometric (ZKTeco K50 / ADMS push) ───────────────────────────────────────
+
+model BiometricPunch {
+  id        String   @id @default(cuid())
+  pin       String // employee code
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  ts        DateTime
+  status    Int? // 0=check-in 1=check-out 255=unknown (ZK protocol)
+  deviceSn  String?
+  ip        String?
+  raw       String?
+  dedupHash String   @unique // sha256(pin|ts|status)
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([pin, ts])
+}
+
+// ─── Policy Rules Engine ──────────────────────────────────────────────────────
+
+model PolicyRule {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  label     String
+  category  String // LEAVE_CAPS | SHORT_HOURS | PAYROLL | GENERAL
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Payroll ──────────────────────────────────────────────────────────────────
+
+model PayrollRun {
+  id              String    @id @default(cuid())
+  month           String // "YYYY-MM"
+  status          String    @default("DRAFT") // DRAFT | FINALIZED
+  createdById     String
+  createdBy       User      @relation(fields: [createdById], references: [id])
+  totalGross      Float     @default(0)
+  totalDeductions Float     @default(0)
+  totalNet        Float     @default(0)
+  finalizedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  payslips        Payslip[]
+
+  @@unique([month])
+}
+
+model Payslip {
+  id                        String     @id @default(cuid())
+  runId                     String
+  run                       PayrollRun @relation(fields: [runId], references: [id])
+  userId                    String
+  user                      User       @relation(fields: [userId], references: [id])
+
+  // snapshot
+  employeeCode     String
+  fullName         String
+  fatherName       String?
+  designation      String
+  departmentName   String
+  employmentStatus String   @default("Permanent")
+  joiningDate      DateTime?
+  paymentMode      String   @default("Bank Transfer")
+
+  // attendance aggregates
+  workingDays               Int   @default(0)
+  workedDays                Int   @default(0)
+  paidLeaves                Float @default(0)
+  unpaidLeaveDays           Float @default(0)
+  shortMinutes              Int   @default(0)
+  lateMinutes               Int   @default(0)
+  leaveDaysEquivalent       Float @default(0)
+  shortConvertedFromBalance Float @default(0)
+
+  // earnings
+  basicSalary          Float @default(0)
+  hrAllowance          Float @default(0)
+  utilityAllowance     Float @default(0)
+  providentFundEarning Float @default(0)
+  bonus                Float @default(0)
+  arrears              Float @default(0)
+  overtimeAmount       Float @default(0)
+  grossPay             Float @default(0)
+
+  // deductions
+  internalLoan       Float @default(0)
+  incomeTax          Float @default(0)
+  providentFund      Float @default(0)
+  eoobi              Float @default(0)
+  taxAdjustment      Float @default(0)
+  shortHourDeduction Float @default(0)
+  leaveDeduction     Float @default(0)
+  totalDeduction     Float @default(0)
+  netPay             Float @default(0)
+
+  // status snapshots (JSON strings)
+  loanStatus String?
+  taxStatus  String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([runId, userId])
+}
+
+model Loan {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  name              String   @default("Internal Loan")
+  loanAmount        Float
+  installments      Int
+  installmentAmount Float
+  paidInstallments  Int      @default(0)
+  startDate         String // "YYYY-MM"
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+}
+
+model MonthlyAdjustment {
+  id      String @id @default(cuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  month   String // "YYYY-MM"
+  bonus   Float  @default(0)
+  arrears Float  @default(0)
+  note    String?
+
+  @@unique([userId, month])
+}
+
+// ─── Security ─────────────────────────────────────────────────────────────────
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  familyId  String // rotation family — reuse detection revokes the whole family
+  tokenHash String    @unique // sha256 of raw token
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Upload {
+  id           String   @id @default(cuid())
+  name         String // original filename (sanitized)
+  mime         String
+  size         Int
+  path         String // storage path (random UUID filename)
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  requests     Request[] // documents attached to leave requests
+  createdAt    DateTime @default(now())
+}
+
+// ─── Notifications & Audit ────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  type      String   @default("INFO") // INFO | APPROVAL | PAYROLL | ALERT | SECURITY
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actorName    String?
+  actorRole    String?
+  targetUserId String?
+  targetName   String?
+  entityType   String // USER | SALARY | LEAVE_QUOTA | ATTENDANCE | REQUEST | RULE | PAYROLL | MFA | SECURITY | SHIFT
+  entityId     String?
+  fieldName    String?
+  oldValue     String?
+  newValue     String?
+  reason       String?
+  ipAddress    String?
+  meta         String?
+  createdAt    DateTime @default(now())
+
+  @@index([entityType])
+  @@index([targetUserId])
+  @@index([createdAt])
+}
