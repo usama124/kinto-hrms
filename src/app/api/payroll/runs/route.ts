@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
+import { requireSession, guard, ok, fail, HttpError } from '@/lib/hrms/api-utils'
 import { isPayrollOperator, ROLES } from '@/lib/hrms/constants'
 import { calculateMonthDetailed } from '@/lib/hrms/payroll-v2'
-import { monthLabel } from '@/lib/hrms/dates'
+import { monthLabel, monthRangeKeys, todayKey, addDaysKey } from '@/lib/hrms/dates'
+import { materializeAttendance } from '@/lib/hrms/attendance-sync'
 import { writeAudit } from '@/lib/hrms/audit'
 
 /** Payroll runs list (Accountant + System Admin; HR Manager read-only). */
@@ -34,6 +35,10 @@ export async function POST(req: NextRequest) {
 
     const existing = await db.payrollRun.findUnique({ where: { month } })
     if (existing) return fail(`A payroll run for ${monthLabel(month)} already exists (${existing.status}).`, 409)
+
+    // make sure punch-less working days exist as ABSENT / leave rows before deductions are computed
+    const { fromKey, toKey } = monthRangeKeys(month)
+    await materializeAttendance(fromKey, toKey < todayKey() ? toKey : addDaysKey(todayKey(), -1))
 
     const { calc } = await calculateMonthDetailed(month)
     // Atomic: run + all payslips commit together (no orphan runs on failure)
@@ -70,6 +75,10 @@ export async function POST(req: NextRequest) {
         data: { totalGross: Math.round(totals.gross * 100) / 100, totalDeductions: Math.round(totals.ded * 100) / 100, totalNet: Math.round(totals.net * 100) / 100 },
       })
       return r
+    }, { timeout: 30_000 }).catch((e) => {
+      // month is unique: a concurrent run for the same month loses cleanly instead of a 500
+      if ((e as { code?: string })?.code === 'P2002') throw new HttpError(409, `A payroll run for ${monthLabel(month)} already exists.`)
+      throw e
     })
 
     await writeAudit({

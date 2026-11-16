@@ -380,6 +380,19 @@ function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] 
     }
   }
 
+  async function discardDraft(run: PayrollRunV2) {
+    if (!window.confirm(`Discard the DRAFT payroll for ${monthLabel(run.month)}? You can then generate it again.`)) return
+    try {
+      await api(`/api/payroll/runs/${run.id}`, { method: 'DELETE' })
+      toast.success(`Draft for ${monthLabel(run.month)} discarded — you can regenerate it`)
+      setSelectedId(null)
+      setDetail(null)
+      await loadRuns()
+    } catch (err) {
+      toast.error(errText(err, 'Discard failed'))
+    }
+  }
+
   async function dl(path: string, name: string, label: string) {
     try {
       await downloadFile(path, name)
@@ -506,9 +519,14 @@ function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] 
                     <Download className="h-3.5 w-3.5 mr-1" /> Payroll Register (PDF)
                   </Button>
                   {isOperator && detail.status === 'DRAFT' && (
-                    <Button size="sm" onClick={() => setPendingFinalize(detail)} className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white">
-                      <Lock className="h-3.5 w-3.5 mr-1" /> Finalize
-                    </Button>
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => void discardDraft(detail)} className="h-8 text-xs border-rose-200 text-rose-700 hover:bg-rose-50">
+                        Discard draft
+                      </Button>
+                      <Button size="sm" onClick={() => setPendingFinalize(detail)} className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white">
+                        <Lock className="h-3.5 w-3.5 mr-1" /> Finalize
+                      </Button>
+                    </>
                   )}
                 </div>
               }>

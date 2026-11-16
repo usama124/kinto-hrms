@@ -5,7 +5,7 @@ import { visibleUserIds, initialStageOf } from '@/lib/hrms/rbac'
 import { validateRequest } from '@/lib/hrms/policy'
 import { ROLES, REQUEST_TYPES, isOversightOnly, PENDING_STATUSES } from '@/lib/hrms/constants'
 import { dateTimeFor } from '@/lib/hrms/dates'
-import { cleanText, cleanEmail } from '@/lib/hrms/sanitize'
+import { cleanText, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 
 /** Requests list — scoped by hierarchy, PENDING always on top (newest first), then APPROVED/REJECTED. */
@@ -64,13 +64,15 @@ export async function POST(req: NextRequest) {
       type,
       leaveTypeId: body.leaveTypeId ? String(body.leaveTypeId) : null,
       startDate: String(body.startDate ?? ''),
-      endDate: String(body.endDate ?? String(body.startDate ?? '')),
+      endDate: String(body.endDate || body.startDate || ''),
       isShortLeave: Boolean(body.isShortLeave),
       shortHours: Number(body.shortHours ?? 0),
       attachmentName: body.attachmentName ? cleanText(body.attachmentName, 200) : null,
       attachmentId: body.attachmentId ? String(body.attachmentId) : null,
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) return fail('Valid start date required (YYYY-MM-DD).', 422)
+    if (!cleanDateKey(input.startDate)) return fail('Valid start date required (YYYY-MM-DD).', 422)
+    if (!cleanDateKey(input.endDate)) return fail('Valid end date required (YYYY-MM-DD).', 422)
+    if (!Number.isFinite(input.shortHours)) return fail('shortHours must be a number.', 422)
 
     const result = await validateRequest(targetUserId, input)
     if (!result.ok) return fail(result.error, result.code)

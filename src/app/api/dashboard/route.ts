@@ -142,7 +142,8 @@ export async function GET(req: NextRequest) {
       teamOverview,
       todayPunch: todayLog ? { checkIn: todayLog.checkIn, checkOut: todayLog.checkOut, status: todayLog.status } : null,
       shift: myShift,
-      canPunch: !isOversightOnly(session.role) && Boolean(me?.shiftId),
+      // shift resolves user → team → department (same order as resolveShiftForUser)
+      canPunch: !isOversightOnly(session.role) && Boolean(me?.shiftId ?? me?.team?.shiftId ?? me?.department?.shiftId),
       canCreateRequest: !isOversightOnly(session.role) && session.role !== ROLES.ACCOUNTANT,
       supervisors: { teamLead: me?.teamLead ?? null, manager: me?.manager ?? null },
     })

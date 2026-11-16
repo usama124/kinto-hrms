@@ -1,4 +1,5 @@
 import 'server-only'
+import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { SHORT_HOUR_STATUSES, WORKED_STATUS_SET } from '@/lib/hrms/constants'
 import { getRules } from '@/lib/hrms/policy'
@@ -71,8 +72,17 @@ export type DetailedCalc = {
   totalDeduction: number
   netPay: number
   // statuses
-  loanStatus: { loanAmount: number; instNo: number; instAmount: number; paid: number; balance: number } | null
+  loanStatus: { loanId?: string; loanAmount: number; instNo: number; instAmount: number; paid: number; balance: number } | null
   taxStatus: { taxableEarning: number; taxLiability: number; taxPaid: number; balance: number }
+}
+
+/** Balance that absorbs short-hour leave conversions: Casual first, else Annual. Shared by calculation and finalize. */
+export async function pickShortConversionBalance(client: Prisma.TransactionClient, userId: string, year: number) {
+  const balances = await client.leaveBalance.findMany({
+    where: { userId, year, leaveType: { code: { in: ['CASUAL', 'ANNUAL'] } } },
+    include: { leaveType: true },
+  })
+  return balances.find((b) => b.leaveType.code === 'CASUAL') ?? balances.find((b) => b.leaveType.code === 'ANNUAL') ?? null
 }
 
 /** Available days = carryForward + quota - availed - pending - lapsed. */
@@ -145,20 +155,11 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
     const leaveDaysEquivalent = rules.conversionMinutes > 0 ? Math.floor(shortMinutes / rules.conversionMinutes) : 0
     let shortConvertedFromBalance = 0
     if (rules.deductionMode === 'LEAVE_FIRST' && leaveDaysEquivalent > 0) {
-      const balances = await db.leaveBalance.findMany({
-        where: { userId: u.id, year, leaveType: { code: { in: ['CASUAL', 'ANNUAL'] } } },
-        include: { leaveType: true },
-      })
-      const preferred = balances.find((b) => b.leaveType.code === 'CASUAL') ?? balances.find((b) => b.leaveType.code === 'ANNUAL')
+      // Pure calculation — the balance is debited once, at finalize (see finalize route)
+      const preferred = await pickShortConversionBalance(db, u.id, year)
       if (preferred) {
         const available = await availableDaysOf(u.id, preferred.leaveTypeId, year)
         shortConvertedFromBalance = Math.min(leaveDaysEquivalent, Math.floor(available))
-        if (shortConvertedFromBalance > 0) {
-          await db.leaveBalance.update({
-            where: { id: preferred.id },
-            data: { availed: { increment: shortConvertedFromBalance } },
-          })
-        }
       }
     }
     const remainingEquivalent = Math.max(0, leaveDaysEquivalent - shortConvertedFromBalance)
@@ -187,6 +188,7 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
       const balance = Math.max(0, loan.loanAmount - loan.paidInstallments * loan.installmentAmount)
       internalLoan = Math.min(loan.installmentAmount, balance)
       loanStatus = {
+        loanId: loan.id, // lets finalize advance exactly this loan
         loanAmount: loan.loanAmount,
         instNo: loan.paidInstallments + 1,
         instAmount: internalLoan,

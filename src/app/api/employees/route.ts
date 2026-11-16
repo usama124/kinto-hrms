@@ -5,6 +5,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin, ROLES } from '@/lib/hrms/constants'
 import { cleanText, cleanEmail, cleanNumber, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { visibleUserIds } from '@/lib/hrms/rbac'
 import { todayKey } from '@/lib/hrms/dates'
 
 const CREATABLE_BY_HR = [ROLES.EMPLOYEE, ROLES.TEAM_LEAD, ROLES.MANAGER, ROLES.ACCOUNTANT]

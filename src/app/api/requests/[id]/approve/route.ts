@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canApproveLeaveAtStage, nextStageOf } from '@/lib/hrms/rbac'
 import { REQUEST_STATUS } from '@/lib/hrms/constants'
-import { dayKey } from '@/lib/hrms/dates'
+import { dayKey, addDaysKey, todayKey } from '@/lib/hrms/dates'
+import { materializeAttendance } from '@/lib/hrms/attendance-sync'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 
@@ -94,6 +95,12 @@ async function finalize(request: NonNullable<Awaited<ReturnType<typeof db.reques
         data: { pending: { decrement: request.dayCount }, availed: { increment: request.dayCount } },
       })
     }
+  }
+  // reflect the approved days in attendance right away (past days only; the rest is picked up by the sync / payroll run)
+  if (!request.isShortLeave) {
+    const lastPast = addDaysKey(todayKey(), -1)
+    const end = dayKey(request.endDate) < lastPast ? dayKey(request.endDate) : lastPast
+    await materializeAttendance(dayKey(request.startDate), end, request.userId).catch((e) => console.error('[api] attendance sync after approval failed', e))
   }
   await db.notification.create({
     data: { userId: request.userId, title: 'Request approved', body: `Your ${request.type === 'LEAVE' ? request.leaveType?.name ?? 'leave' : request.type === 'TRAVEL' ? 'travel' : 'official duty'} request was fully approved.${comment ? ` Note: ${comment}` : ''}`, type: 'APPROVAL' },

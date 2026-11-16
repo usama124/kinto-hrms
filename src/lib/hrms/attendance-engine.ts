@@ -109,7 +109,10 @@ export function computeFromPunches(
 
   const lateMinutes = Math.max(0, inMin - startMin - shift.graceMinutes)
   const earlyMinutes = outMin != null ? Math.max(0, endMin - outMin - shift.graceMinutes) : 0
-  const workedMinutes = outMin != null ? Math.max(0, Math.min(outMin, endMin) - Math.min(inMin, startMin)) : 0
+  // Arrival inside the grace window (or early) counts from shift start; a later arrival is
+  // deducted in full so late check-ins now produce short minutes (was Math.min → never short).
+  const arrival = inMin <= startMin + shift.graceMinutes ? Math.min(inMin, startMin) : inMin
+  const workedMinutes = outMin != null ? Math.max(0, Math.min(outMin, endMin) - arrival) : 0
   const shortMinutes = Math.max(0, expected - workedMinutes)
 
   let status: string
@@ -176,8 +179,18 @@ export async function applyPunches(punches: { pin: string; ts: Date; status: num
   let days = 0
   for (const [key, group] of byUserDay) {
     const [userId, dateKey] = key.split('|')
+    // never clobber an HR adjustment / approved regularization with raw device data
+    const existing = await db.attendanceLog.findUnique({ where: { userId_dateKey: { userId, dateKey } }, select: { isManuallyUpdated: true } })
+    if (existing?.isManuallyUpdated) continue
+    // rebuild from EVERY stored punch of the day: a later batch may carry only the check-out
+    const dayStart = dateTimeFor(dateKey, '00:00')
+    const stored = await db.biometricPunch.findMany({
+      where: { userId, ts: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) } },
+      select: { ts: true, status: true },
+    })
+    const dayPunches = stored.length ? stored : group
     const shift = await resolveShiftForUser(userId)
-    const computed = computeFromPunches(dateKey, group.map((g) => ({ ts: g.ts, status: g.status })), shift, holidays)
+    const computed = computeFromPunches(dateKey, dayPunches.map((g) => ({ ts: g.ts, status: g.status })), shift, holidays)
     await upsertLogFromComputed(userId, dateKey, computed, shift, { source })
     days++
   }

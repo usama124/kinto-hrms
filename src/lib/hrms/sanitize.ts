@@ -22,7 +22,10 @@ export function cleanNumber(input: unknown, fallback = 0): number {
 
 export function cleanDateKey(input: unknown): string | null {
   const s = String(input ?? '')
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  // round-trip rejects impossible dates such as 2026-02-31 (Date.UTC would roll them over)
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s ? s : null
 }
 
 export function cleanHhmm(input: unknown): string | null {

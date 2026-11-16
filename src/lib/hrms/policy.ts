@@ -1,6 +1,6 @@
 import 'server-only'
 import { db } from '@/lib/db'
-import { DEFAULT_RULES, POLICY_KEYS, REQUEST_STATUS } from '@/lib/hrms/constants'
+import { DEFAULT_RULES, POLICY_KEYS, REQUEST_STATUS, PENDING_STATUSES } from '@/lib/hrms/constants'
 import { workingDaysBetween, parseKey, weekdayOf, daysBetweenInclusive, dayKey } from '@/lib/hrms/dates'
 import { availableDaysOf } from '@/lib/hrms/payroll'
 
@@ -69,7 +69,7 @@ async function usedDaysInMonth(userId: string, leaveTypeId: string, month: strin
       userId,
       type: 'LEAVE',
       leaveTypeId,
-      status: { in: [REQUEST_STATUS.APPROVED, REQUEST_STATUS.PENDING_TEAM_LEAD, REQUEST_STATUS.PENDING_MANAGER] },
+      status: { in: [REQUEST_STATUS.APPROVED, ...PENDING_STATUSES] },
     },
     select: { startDate: true, endDate: true, dayCount: true, isShortLeave: true },
   })
@@ -105,7 +105,8 @@ export async function validateRequest(userId: string, input: RequestInput): Prom
 
     // Short-leave constraints
     if (input.isShortLeave) {
-      if (input.shortHours <= 0) return { ok: false, code: 422, error: 'Short leave requires hours.' }
+      // `!(x > 0)` also rejects NaN, which slips past `x <= 0`
+      if (!Number.isFinite(input.shortHours) || !(input.shortHours > 0)) return { ok: false, code: 422, error: 'Short leave requires hours.' }
       if (input.shortHours > rules.shortLeaveMaxHours)
         return { ok: false, code: 422, error: `Short leave cannot exceed ${rules.shortLeaveMaxHours} hours.` }
       const dayCount = Math.round((input.shortHours / (rules.shiftDurationMinutes / 60)) * 100) / 100
