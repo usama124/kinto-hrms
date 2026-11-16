@@ -9,6 +9,7 @@ import {
   api, ApiError, refreshSession, dayLabel, dateTimeLabel,
   type SessionUser, type PersonLite, type RequestRow, type AttRequestRow, type Balance, type Meta,
   REQUEST_TYPE_LABELS, STATUS_BADGE_TONE, STAGE_LABELS, avatarSrc } from '@/lib/hrms/client'
+import { dayKey } from '@/lib/hrms/dates'
 import { Avatar, GlassCard, Pill, SegmentedBar, SectionTitle, EmptyState } from './shared'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -241,8 +242,8 @@ export function RequestsView({ user, people, onApproved }: {
         </td>
         <td className="px-3 py-2.5 whitespace-nowrap">
           <p className="text-xs text-slate-600 tnum">
-            {dayLabel(r.startDate.slice(0, 10))}
-            {r.endDate.slice(0, 10) !== r.startDate.slice(0, 10) ? ` → ${dayLabel(r.endDate.slice(0, 10))}` : ''}
+            {dayLabel(dayKey(new Date(r.startDate)))}
+            {dayKey(new Date(r.endDate)) !== dayKey(new Date(r.startDate)) ? ` → ${dayLabel(dayKey(new Date(r.endDate)))}` : ''}
           </p>
           <p className="text-[10px] text-slate-400 tnum">
             {r.isShortLeave ? `Short leave · ${r.shortHours}h` : `${r.dayCount} day(s)`}

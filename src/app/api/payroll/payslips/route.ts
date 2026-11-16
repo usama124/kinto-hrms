@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isPayrollOperator, isOrgAdmin } from '@/lib/hrms/constants'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 /** Payslip list — Employee: own only; Admin/Accountant: all; Manager/TL: scoped hierarchy. */
 export async function GET(req: NextRequest) {
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     } else if (!privileged) {
       target = [session.userId]
     }
-    if (month !== null && !/^\d{4}-\d{2}$/.test(month)) return fail('month must be YYYY-MM.', 422)
+    if (month !== null && !cleanMonth(month)) return fail('month must be YYYY-MM.', 422)
 
     const slips = await db.payslip.findMany({
       where: {

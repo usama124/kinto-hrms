@@ -64,7 +64,9 @@ export default function proxy(req: NextRequest) {
   const res = NextResponse.next()
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v)
   // API responses carry personal / payroll data: never let a browser or shared proxy cache them
-  if (pathname.startsWith('/api/')) res.headers.set('Cache-Control', 'no-store')
+  // …except profile pictures: their URL carries ?v=<upload id>, so the route marks them immutable and they should stay cacheable
+  const isAvatar = req.method === 'GET' && /^\/api\/employees\/[^/]+\/avatar$/.test(pathname)
+  if (pathname.startsWith('/api/') && !isAvatar) res.headers.set('Cache-Control', 'no-store')
   return res
 }
 

@@ -6,6 +6,7 @@ import { ROLES, isOversightOnly, PENDING_STATUSES, isAccountsRole } from '@/lib/
 import { dayKey, parseKey } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey, cleanHhmm } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { notifyRole } from '@/lib/hrms/notify'
 
 /** GET — regularization queue scoped by hierarchy; PENDING always on top. */
 export async function GET(req: NextRequest) {
@@ -71,8 +72,7 @@ export async function POST(req: NextRequest) {
       })
     } else {
       // an HR Manager's own request is routed to the System Admin, never to HR
-      const hrs = await db.user.findFirst({ where: { role: hrStageRole(requester), isActive: true }, select: { id: true } })
-      if (hrs) await db.notification.create({ data: { userId: hrs.id, title: 'Attendance regularization routed to HR', body: `${requester.fullName} · ${date}.`, type: 'APPROVAL' } })
+      await notifyRole(hrStageRole(requester), { title: 'Attendance regularization routed to HR', body: `${requester.fullName} · ${date}.` })
     }
 
     await writeAudit({

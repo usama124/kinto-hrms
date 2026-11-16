@@ -8,6 +8,7 @@ import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { clientIp } from '@/lib/hrms/rate-limit'
 import { materializeAttendance } from '@/lib/hrms/attendance-sync'
+import { notifyRole } from '@/lib/hrms/notify'
 
 /**
  * Approval engine for leave/travel/duty requests.
@@ -55,12 +56,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     if (next) {
       const approverId = next.stage === 'TEAM_LEAD' ? request.user.teamLeadId : next.stage === 'MANAGER' ? request.user.managerId : null
-      const notifyId = approverId ?? (next.stage === 'HR' ? (await db.user.findFirst({ where: { role: hrStageRole(request.user), isActive: true }, select: { id: true } }))?.id : undefined)
-      if (notifyId) {
-        await db.notification.create({
-          data: { userId: notifyId, title: 'Request escalated for approval', body: `${request.user.fullName} · ${request.leaveType?.name ?? request.type} — awaiting your approval.`, type: 'APPROVAL' },
-        })
-      }
+      const escalation = { title: 'Request escalated for approval', body: `${request.user.fullName} · ${request.leaveType?.name ?? request.type} — awaiting your approval.` }
+      if (approverId) await db.notification.create({ data: { userId: approverId, ...escalation, type: 'APPROVAL' } })
+      else if (next.stage === 'HR') await notifyRole(hrStageRole(request.user), escalation) // every HR Manager (or every System Admin for an HR Manager's own request)
       await db.notification.create({
         data: { userId: request.userId, title: 'First-level approval received', body: `Your request has moved to the ${next.stage === 'MANAGER' ? 'Manager' : 'HR'} approval stage.`, type: 'INFO' },
       })

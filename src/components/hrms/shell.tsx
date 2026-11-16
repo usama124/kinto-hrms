@@ -29,7 +29,7 @@ export const NAV: { key: ViewKey; label: string; icon: React.ComponentType<{ cla
   { key: 'directory', label: 'Employee Directory', icon: Users, roles: ALL_ROLES },
   { key: 'org-chart', label: 'Org Chart', icon: Network, roles: NON_EMPLOYEE },
   { key: 'attendance', label: 'Attendance', icon: CalendarClock, roles: ALL_ROLES },
-  { key: 'requests', label: 'Requests', icon: Inbox, roles: ALL_ROLES },
+  { key: 'requests', label: 'Requests', icon: Inbox, roles: ['SUPER_ADMIN', 'HR_MANAGER', 'MANAGER', 'TEAM_LEAD', 'EMPLOYEE'] }, // accounts roles are barred from leave/regularization server-side,
   { key: 'payroll', label: 'Payroll', icon: Wallet, roles: ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER'] },
   { key: 'reports', label: 'Reports', icon: PieChart, roles: NON_EMPLOYEE },
   { key: 'rules', label: 'Rules & Settings', icon: SlidersHorizontal, roles: ['SUPER_ADMIN', 'HR_MANAGER'] },
@@ -164,6 +164,7 @@ export function Shell(props: {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => onView(n.key)}
+                      aria-label={n.label}
                       className={relative(active) ? 'relative flex items-center gap-3 rounded-xl px-3 h-10 w-full text-left transition-colors bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'relative flex items-center gap-3 rounded-xl px-3 h-10 w-full text-left transition-colors text-slate-500 hover:bg-white/80 hover:text-teal-700'}
                       aria-current={active ? 'page' : undefined}
                     >

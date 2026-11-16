@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin } from '@/lib/hrms/constants'
-import { cleanText, cleanNumber } from '@/lib/hrms/sanitize'
+import { cleanText, cleanNumber, cleanHhmm } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 
 /** Shift templates — list for all, create/assign for Admin/HR. */
@@ -25,11 +25,13 @@ export async function POST(req: NextRequest) {
     if (!isOrgAdmin(session.role)) return fail('Forbidden: only Admin / HR can create shifts.', 403)
     const body = await req.json().catch(() => null)
     const name = cleanText(body?.name, 80)
-    const startTime = cleanText(body?.startTime, 5)
-    const endTime = cleanText(body?.endTime, 5)
-    if (!name || !/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-      return fail('name, startTime (HH:mm) and endTime (HH:mm) are required.', 422)
+    const startTime = cleanHhmm(body?.startTime) // strict 00:00–23:59 (25:00 / 99:99 used to be stored)
+    const endTime = cleanHhmm(body?.endTime)
+    if (!name || !startTime || !endTime) {
+      return fail('name, startTime (HH:mm, 00:00–23:59) and endTime (HH:mm, 00:00–23:59) are required.', 422)
     }
+    // the attendance engine works within one calendar day; an end before the start used to be clamped silently
+    if (endTime <= startTime) return fail('A shift must end after it starts (overnight shifts are not supported).', 422)
     const graceMinutes = Math.max(0, Math.trunc(cleanNumber(body?.graceMinutes, 15)))
     const breakMinutes = Math.max(0, Math.trunc(cleanNumber(body?.breakMinutes, 60)))
     const workingDays: number[] = Array.isArray(body?.workingDays) && body.workingDays.length
@@ -86,7 +88,7 @@ export async function PATCH(req: NextRequest) {
     if (targetTeam) {
       await db.team.update({ where: { id: targetTeam }, data: { shiftId } })
     } else {
-      await db.department.update({ where: { id: targetDept }, data: { shiftId } })
+      await db.department.update({ where: { id: targetDept! }, data: { shiftId } })
     }
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,

@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requireSession, guard, ok } from '@/lib/hrms/api-utils'
+import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
 import { addDaysKey, todayKey, fmtDateKey, monthRangeKeys } from '@/lib/hrms/dates'
 import { ROLES, isOrgAdmin, isOversightOnly, isAccountsRole, WORKED_STATUS_SET, NON_WORKING_STATUSES } from '@/lib/hrms/constants'
 import { departmentMatrix, rosterFor, computeStats } from '@/lib/hrms/org-stats'
 import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
 import { resolveShiftForUser } from '@/lib/hrms/attendance-engine'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 const SHORT_HOUR_SET: readonly string[] = ['PRESENT', 'SHORT_DURATION', 'WFH', 'SHORT_LEAVE']
 
@@ -19,7 +20,9 @@ export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
     const qp = req.nextUrl.searchParams
-    const month = qp.get('month') ?? todayKey().slice(0, 7)
+    const monthParam = qp.get('month')
+    const month = monthParam === null ? todayKey().slice(0, 7) : cleanMonth(monthParam)
+    if (!month) return fail('month must be YYYY-MM (01–12).', 422)
     const to = qp.get('to') ?? todayKey()
     const from = qp.get('from') ?? monthRangeKeys(month).fromKey
 

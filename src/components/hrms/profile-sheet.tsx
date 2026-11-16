@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   BadgeCheck, CalendarDays, Download, IdCard, TrendingUp, ShieldAlert, Pencil,
-  User, Fingerprint, Phone, Wallet,
+  User, Fingerprint, Phone, Wallet, KeyRound,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -13,7 +13,7 @@ import { Avatar, GlassCard, KeyValue, Pill, SegmentedBar, SectionTitle, EmptySta
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { EmployeeFormDialog } from './employee-form'
 
 export const ROLE_TONE: Record<string, string> = {
@@ -59,6 +59,7 @@ export function ProfileSheet(props: {
   const [quotaDelta, setQuotaDelta] = useState('1')
   const [quotaReason, setQuotaReason] = useState('')
   const [editOpen, setEditOpen] = useState(false)
+  const [resetResult, setResetResult] = useState<{ email: string; temporaryPassword: string } | null>(null)
 
   const canEdit = selfRole === 'SUPER_ADMIN' || selfRole === 'HR_MANAGER'
 
@@ -116,6 +117,15 @@ export function ProfileSheet(props: {
     }
   }
 
+  async function resetPassword(id: string, name: string) {
+    if (!window.confirm(`Issue a new temporary password for ${name}? Their current password stops working, they are signed out everywhere, and they must choose a new one at next sign-in.`)) return
+    try {
+      setResetResult(await api<{ email: string; temporaryPassword: string }>(`/api/employees/${id}/reset-password`, { method: 'POST', body: '{}' }))
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not reset the password')
+    }
+  }
+
   const e = detail
 
   return (
@@ -125,6 +135,11 @@ export function ProfileSheet(props: {
           <SheetHeader className="px-5 py-3.5 border-b border-slate-100 flex-row items-center justify-between space-y-0">
             <SheetTitle className="text-sm font-semibold text-slate-700">Employee 360° Profile</SheetTitle>
             <div className="flex items-center gap-2">
+              {canEdit && userId && userId !== selfId && e && !((e.role === 'HR_MANAGER' || e.role === 'SUPER_ADMIN') && selfRole !== 'SUPER_ADMIN') && (
+                <Button size="sm" variant="outline" onClick={() => void resetPassword(userId, e.fullName)} className="h-8 text-xs">
+                  <KeyRound className="h-3.5 w-3.5 mr-1" /> Reset password
+                </Button>
+              )}
               {canEdit && userId && (
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)} className="h-8 text-xs">
                   <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -409,6 +424,26 @@ export function ProfileSheet(props: {
             <Button variant="outline" size="sm" onClick={() => setQuotaDialog(null)}>Cancel</Button>
             <Button size="sm" disabled={!quotaReason.trim()} onClick={submitQuota} className="bg-teal-600 hover:bg-teal-700 text-white">Apply increment</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* One-time temporary password */}
+      <Dialog open={!!resetResult} onOpenChange={(o) => { if (!o) setResetResult(null) }}>
+        <DialogContent className="sm:max-w-sm glass-strong">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Temporary password issued</DialogTitle>
+            <DialogDescription className="text-xs text-amber-700">Copy it now — it is shown only once. The employee must change it at their next sign-in.</DialogDescription>
+          </DialogHeader>
+          {resetResult && (
+            <div className="space-y-2 py-1 text-xs">
+              <p className="text-slate-500">Sign-in e-mail: <b className="text-slate-700">{resetResult.email}</b></p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded bg-white/70 px-2 py-1.5 text-sm font-semibold tracking-wide text-slate-800 tnum">{resetResult.temporaryPassword}</code>
+                <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => { void navigator.clipboard?.writeText(resetResult.temporaryPassword); toast.success('Password copied') }}>Copy</Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter><Button size="sm" onClick={() => setResetResult(null)} className="bg-teal-600 hover:bg-teal-700 text-white">Done</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

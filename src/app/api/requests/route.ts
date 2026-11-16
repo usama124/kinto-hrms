@@ -5,6 +5,7 @@ import { visibleUserIds, initialStageOf, hrStageRole } from '@/lib/hrms/rbac'
 import { validateRequest } from '@/lib/hrms/policy'
 import { ROLES, REQUEST_TYPES, PENDING_STATUSES, isAccountsRole } from '@/lib/hrms/constants'
 import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
+import { notifyRole } from '@/lib/hrms/notify'
 import { dateTimeFor } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
@@ -133,11 +134,8 @@ export async function POST(req: NextRequest) {
       })
     } else {
       // HR stage: an HR Manager's own request is routed to the System Admin, never to HR
-      const hrs = await db.user.findFirst({ where: { role: hrStageRole(requester), isActive: true }, select: { id: true } })
-      if (hrs) {
-        await db.notification.create({
-          data: { userId: hrs.id, title: `New ${typeLabel(input.type)} request routed to HR`, body: `${requester.fullName} · ${result.dayCount} day(s) — no reporting line assigned.`, type: 'APPROVAL' },
-        })
+      {
+        await notifyRole(hrStageRole(requester), { title: `New ${typeLabel(input.type)} request routed to HR`, body: `${requester.fullName} · ${result.dayCount} day(s) — no reporting line assigned.` })
       }
     }
 

@@ -262,7 +262,7 @@ export type AuditRow = {
 export type Notif = { id: string; title: string; body: string; type: string; read: boolean; createdAt: string }
 
 export function dayLabel(key: string): string {
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(key + 'T00:00:00Z'))
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(new Date(key + 'T00:00:00Z'))
 }
 
 export function timeLabel(iso: string | null): string {

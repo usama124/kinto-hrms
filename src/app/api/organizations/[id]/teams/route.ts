@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin } from '@/lib/hrms/constants'
 import { computeStats, teamBreakdown } from '@/lib/hrms/org-stats'
 import { todayKey } from '@/lib/hrms/dates'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 /** Level 2 — Team breakdown inside a department (Admin/HR only). */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -11,7 +12,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const session = await requireSession()
     if (!isOrgAdmin(session.role)) return fail('Forbidden.', 403)
     const { id } = await ctx.params
-    const month = req.nextUrl.searchParams.get('month') ?? todayKey().slice(0, 7)
+    const monthParam = req.nextUrl.searchParams.get('month')
+    const month = monthParam === null ? todayKey().slice(0, 7) : cleanMonth(monthParam)
+    if (!month) return fail('month must be YYYY-MM (01–12).', 422)
     const dept = await db.department.findUnique({ where: { id } })
     if (!dept) return fail('Department not found.', 404)
     const teams = await teamBreakdown(id, month)

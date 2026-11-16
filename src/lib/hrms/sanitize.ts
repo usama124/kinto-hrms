@@ -32,3 +32,9 @@ export function cleanHhmm(input: unknown): string | null {
   const s = String(input ?? '')
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null
 }
+
+/** "YYYY-MM" with a REAL month (01–12). The old /^\d{4}-\d{2}$/ checks accepted 2026-13 and 2026-00. */
+export function cleanMonth(input: unknown): string | null {
+  const s = String(input ?? '')
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(s) ? s : null
+}

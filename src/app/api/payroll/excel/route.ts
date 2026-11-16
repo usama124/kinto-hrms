@@ -5,6 +5,7 @@ import { isPayrollOperator } from '@/lib/hrms/constants'
 import { payrollMasterSheet } from '@/lib/hrms/excel'
 import { monthLabel } from '@/lib/hrms/dates'
 import { writeAudit } from '@/lib/hrms/audit'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 /**
  * GET /api/payroll/excel?month=YYYY-MM — formatted .xlsx Payroll Master Sheet
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
       return fail('Forbidden: Excel export is restricted to Accountant and System Admin.', 403)
     }
     const month = req.nextUrl.searchParams.get('month') ?? ''
-    if (!/^\d{4}-\d{2}$/.test(month)) return fail('Valid month required (YYYY-MM).', 422)
+    if (!cleanMonth(month)) return fail('Valid month required (YYYY-MM).', 422)
 
     const run = await db.payrollRun.findUnique({
       where: { month },

@@ -627,7 +627,7 @@ function Individual360({ user, people }: { user: SessionUser; people: PersonLite
 
 // ─── Exported view ────────────────────────────────────────────────────────────
 
-const ORG_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'MANAGER']
+const ORG_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER']
 
 export function ReportsView({ user, people }: { user: SessionUser; people: PersonLite[] }) {
   const canSeeOrg = ORG_ROLES.includes(user.role)

@@ -5,6 +5,7 @@ import { isPayrollOperator } from '@/lib/hrms/constants'
 import { payslipCollectionPDF, type SalarySlipInput } from '@/lib/hrms/pdf-payslip'
 import { monthLabel, fmtDateKey } from '@/lib/hrms/dates'
 import { writeAudit } from '@/lib/hrms/audit'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 /** Bulk salary slip collection — one page per employee for a month. */
 export async function GET(req: NextRequest) {
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
     if (!isPayrollOperator(session.role)) return fail('Forbidden.', 403)
 
     const month = req.nextUrl.searchParams.get('month') ?? ''
-    if (!/^\d{4}-\d{2}$/.test(month)) return fail('Valid month required (YYYY-MM).', 422)
+    if (!cleanMonth(month)) return fail('Valid month required (YYYY-MM).', 422)
 
     const run = await db.payrollRun.findUnique({
       where: { month },

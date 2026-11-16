@@ -5,6 +5,7 @@ import { canApproveAttendanceAtStage, nextStageOf, hrStageRole } from '@/lib/hrm
 import { applyRegularizationToLog } from '@/lib/hrms/regularization'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { notifyRole } from '@/lib/hrms/notify'
 
 /**
  * Approve a regularization request. Chain: TEAM_LEAD → MANAGER → HR; org admins fast-track.
@@ -38,10 +39,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     if (next) {
       const approverId = next.stage === 'MANAGER' ? request.user.managerId : null
-      const notifyId = approverId ?? (await db.user.findFirst({ where: { role: hrStageRole(request.user), isActive: true }, select: { id: true } }))?.id
-      if (notifyId) {
-        await db.notification.create({ data: { userId: notifyId, title: 'Attendance regularization escalated', body: `${request.user.fullName} · ${request.date} — awaiting your approval.`, type: 'APPROVAL' } })
-      }
+      const escalated = { title: 'Attendance regularization escalated', body: `${request.user.fullName} · ${request.date} — awaiting your approval.` }
+      if (approverId) await db.notification.create({ data: { userId: approverId, ...escalated, type: 'APPROVAL' } })
+      else await notifyRole(hrStageRole(request.user), escalated)
       await db.notification.create({ data: { userId: request.userId, title: 'Attendance request advanced', body: `Your regularization for ${request.date} moved to the ${next.stage === 'MANAGER' ? 'Manager' : 'HR'} stage.`, type: 'INFO' } })
       await writeAudit({
         actorId: session.userId, actorName: session.fullName, actorRole: session.role,

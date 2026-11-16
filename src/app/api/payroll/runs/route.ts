@@ -6,6 +6,7 @@ import { calculateMonthDetailed } from '@/lib/hrms/payroll-v2'
 import { monthLabel, monthRangeKeys, todayKey, addDaysKey } from '@/lib/hrms/dates'
 import { materializeAttendance } from '@/lib/hrms/attendance-sync'
 import { writeAudit } from '@/lib/hrms/audit'
+import { cleanMonth } from '@/lib/hrms/sanitize'
 
 /** Payroll runs list (Accountant + System Admin; HR Manager read-only). */
 export async function GET() {
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
     const body = await req.json().catch(() => null)
     const month = String(body?.month ?? '').trim()
-    if (!/^\d{4}-\d{2}$/.test(month)) return fail('Valid month required (YYYY-MM).', 422)
+    if (!cleanMonth(month)) return fail('Valid month required (YYYY-MM).', 422)
 
     const existing = await db.payrollRun.findUnique({ where: { month } })
     if (existing) return fail(`A payroll run for ${monthLabel(month)} already exists (${existing.status}).`, 409)

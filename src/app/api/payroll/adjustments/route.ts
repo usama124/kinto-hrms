@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isPayrollOperator } from '@/lib/hrms/constants'
-import { cleanNumber, cleanText } from '@/lib/hrms/sanitize'
+import { cleanNumber, cleanText, cleanMonth } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 
 /** POST /api/payroll/adjustments — monthly bonus / arrears for a payslip. */
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     const userId = String(body?.userId ?? '')
     const month = String(body?.month ?? '')
-    if (!userId || !/^\d{4}-\d{2}$/.test(month)) return fail('userId and month (YYYY-MM) required.', 422)
+    if (!userId || !cleanMonth(month)) return fail('userId and month (YYYY-MM) required.', 422)
 
     const target = await db.user.findUnique({ where: { id: userId } })
     if (!target || target.role === 'SUPER_ADMIN') return fail('Employee not found.', 404)
