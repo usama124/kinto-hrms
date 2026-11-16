@@ -5,6 +5,7 @@ import { Loader2, UserPlus, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError, type Employee360, type Meta } from '@/lib/hrms/client'
 import { EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
+import { orderedTree } from '@/lib/hrms/designation-tree'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -12,10 +13,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type FormState = {
-  fullName: string; email: string; role: string; employeeCode: string; designation: string
+  fullName: string; email: string; role: string; employeeCode: string; designation: string; designationId: string
   fatherName: string; motherName: string; dateOfBirth: string; gender: string
   maritalStatus: string; bloodGroup: string; religion: string; nationality: string
   cnic: string; cnicExpiry: string; drivingLicense: string; passportNo: string; passportExpiry: string
@@ -27,7 +28,7 @@ type FormState = {
 }
 
 const EMPTY: FormState = {
-  fullName: '', email: '', role: 'EMPLOYEE', employeeCode: '', designation: '',
+  fullName: '', email: '', role: 'EMPLOYEE', employeeCode: '', designation: '', designationId: '',
   fatherName: '', motherName: '', dateOfBirth: '', gender: '', maritalStatus: '', bloodGroup: '', religion: 'Islam', nationality: 'Pakistani',
   cnic: '', cnicExpiry: '', drivingLicense: '', passportNo: '', passportExpiry: '',
   phone: '', personalEmail: '', emergencyContactName: '', emergencyContactPhone: '', address: '',
@@ -49,6 +50,40 @@ const ROLE_OPTIONS = [
   { value: 'ACCOUNTS_MANAGER', label: 'Accounts Head / Manager (finalizes payroll)', adminOnly: true },
   { value: 'HR_MANAGER', label: 'HR Manager', adminOnly: true },
 ]
+
+type DesignationGroup = { departmentId: string; name: string; items: { id: string; name: string; depth: number }[] }
+
+/** Designation picker: grouped by department, children indented under their parent. */
+function DesignationSelect({ value, legacyName, groups, onChange, empty }: {
+  value: string; legacyName: string; groups: DesignationGroup[]; onChange: (id: string) => void; empty: boolean
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-slate-500">Designation *</Label>
+      <Select value={value || '__none'} onValueChange={(v) => { if (v !== '__none' && v !== '__legacy') onChange(v) }}>
+        <SelectTrigger className="h-9 bg-white/80 text-xs">
+          <SelectValue placeholder="Select designation" />
+        </SelectTrigger>
+        <SelectContent className="max-h-72">
+          {!value && legacyName && <SelectItem value="__legacy" className="text-xs">{legacyName} (current — not in company structure)</SelectItem>}
+          {!value && !legacyName && <SelectItem value="__none" className="text-xs text-slate-400">Select designation</SelectItem>}
+          {groups.map((g) => (
+            <SelectGroup key={g.departmentId}>
+              <SelectLabel className="text-[10px] uppercase tracking-wide text-slate-400">{g.name}</SelectLabel>
+              {g.items.map((d) => (
+                <SelectItem key={d.id} value={d.id} className="text-xs">
+                  <span style={{ paddingLeft: d.depth * 14 }}>{d.depth > 0 ? '└ ' : ''}{d.name}</span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
+        </SelectContent>
+      </Select>
+      {empty && <p className="text-[10px] text-amber-600">No designations are defined yet. Add them under Rules &amp; Settings → Designations first.</p>}
+      {!value && legacyName && !empty && <p className="text-[10px] text-slate-400">Current title is free text. Pick a designation above to link it to the company structure.</p>}
+    </div>
+  )
+}
 
 // Keep field component identities stable across parent state updates.
 function SelectField({ label, value, onChange, placeholder, options }: {
@@ -126,7 +161,7 @@ export function EmployeeFormDialog(props: {
         .then((d) => {
           const e = d.employee
           setForm({
-            fullName: e.fullName, email: e.email, role: e.role, employeeCode: e.employeeCode, designation: e.designation,
+            fullName: e.fullName, email: e.email, role: e.role, employeeCode: e.employeeCode, designation: e.designation, designationId: e.designationId ?? '',
             fatherName: e.fatherName ?? '', motherName: e.motherName ?? '',
             dateOfBirth: e.dateOfBirth ? e.dateOfBirth.slice(0, 10) : '',
             gender: e.gender ?? '', maritalStatus: e.maritalStatus ?? '', bloodGroup: e.bloodGroup ?? '', religion: e.religion ?? '', nationality: e.nationality ?? '',
@@ -148,11 +183,33 @@ export function EmployeeFormDialog(props: {
 
   const teams = useMemo(() => (meta?.teams ?? []).filter((t) => !form.departmentId || t.departmentId === form.departmentId), [meta, form.departmentId])
   const people = meta?.people ?? []
-  const designationOptions = useMemo(() => {
-    const list = meta?.designations ?? []
-    const all = form.designation && !list.some((d) => d.toLowerCase() === form.designation.toLowerCase()) ? [form.designation, ...list] : list
-    return all.map((d) => ({ value: d, label: d }))
-  }, [meta, form.designation])
+  // Designations grouped by department and indented by hierarchy; once a department is chosen only its designations are offered.
+  const designationGroups = useMemo(() => {
+    const all = meta?.designations ?? []
+    const byDept = new Map<string, typeof all>()
+    for (const d of all) byDept.set(d.departmentId, [...(byDept.get(d.departmentId) ?? []), d])
+    return Array.from(byDept.entries())
+      .filter(([deptId]) => !form.departmentId || deptId === form.departmentId)
+      .map(([deptId, list]) => ({ departmentId: deptId, name: list[0].departmentName, items: orderedTree(list) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [meta, form.departmentId])
+
+  function pickDesignation(id: string) {
+    const d = meta?.designations.find((x) => x.id === id)
+    if (!d) return
+    // choosing a designation also fills in its department when none is set yet
+    setForm((f) => ({ ...f, designationId: d.id, designation: d.name, departmentId: f.departmentId || d.departmentId }))
+  }
+
+  function pickDepartment(deptId: string) {
+    setForm((f) => {
+      const held = meta?.designations.find((x) => x.id === f.designationId)
+      // a designation of another department no longer fits → clear it so the employee is not saved with a mismatch
+      const mismatch = !!deptId && !!held && held.departmentId !== deptId
+      return { ...f, departmentId: deptId, ...(mismatch ? { designationId: '', designation: '' } : {}) }
+    })
+  }
+
   const isAdmin = selfRole === 'SUPER_ADMIN'
   const roleOptions = ROLE_OPTIONS.filter((r) => isAdmin || !r.adminOnly)
 
@@ -160,7 +217,7 @@ export function EmployeeFormDialog(props: {
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
-        fullName: form.fullName, email: form.email, role: form.role, designation: form.designation,
+        fullName: form.fullName, email: form.email, role: form.role, designation: form.designation, designationId: form.designationId || undefined,
         fatherName: form.fatherName || undefined, motherName: form.motherName || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
         gender: form.gender || undefined, maritalStatus: form.maritalStatus || undefined,
@@ -236,7 +293,7 @@ export function EmployeeFormDialog(props: {
             <TabsContent value="personal" className="mt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <TextField label="Full Name" required value={form.fullName} onChange={set('fullName')} placeholder="e.g., Muhammad Muaz" />
-                <SelectField label="Designation *" value={form.designation} onChange={set('designation')} placeholder="Select designation" options={designationOptions} />
+                <DesignationSelect value={form.designationId} legacyName={form.designation} groups={designationGroups} onChange={pickDesignation} empty={(meta?.designations.length ?? 0) === 0} />
                 <TextField label="Father Name" value={form.fatherName} onChange={set('fatherName')} />
                 <TextField label="Mother Name" value={form.motherName} onChange={set('motherName')} />
                 <TextField label="Date of Birth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} />
@@ -276,7 +333,7 @@ export function EmployeeFormDialog(props: {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <SelectField label="Role" value={form.role} onChange={set('role')} placeholder="Select" options={roleOptions.map((r) => ({ value: r.value, label: r.label }))} />
                 <TextField label="Employee Code (ZKTeco PIN)" value={form.employeeCode} onChange={set('employeeCode')} placeholder={isEdit ? '' : 'Auto-generated'} disabled={!isEdit} />
-                <SelectField label="Department" value={form.departmentId} onChange={set('departmentId')} placeholder="Select" options={(meta?.departments ?? []).map((d) => ({ value: d.id, label: d.name }))} />
+                <SelectField label="Department" value={form.departmentId} onChange={pickDepartment} placeholder="Select" options={(meta?.departments ?? []).filter((d) => d.isActive !== false || d.id === form.departmentId).map((d) => ({ value: d.id, label: d.name }))} />
                 <SelectField label="Team" value={form.teamId} onChange={set('teamId')} placeholder="Select" options={teams.map((t) => ({ value: t.id, label: t.name }))} />
                 <SelectField label="Team Lead (first approver)" value={form.teamLeadId} onChange={set('teamLeadId')} placeholder="Select" options={people.map((p) => ({ value: p.id, label: `${p.fullName} · ${p.designation}` }))} />
                 <SelectField label="Manager (second approver)" value={form.managerId} onChange={set('managerId')} placeholder="Select" options={people.map((p) => ({ value: p.id, label: `${p.fullName} · ${p.designation}` }))} />

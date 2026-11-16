@@ -10,17 +10,42 @@ datasource db {
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Department {
-  id        String @id @default(cuid())
-  name      String @unique
-  code      String @unique
-  managerId String? // department head (MANAGER role user)
+  id          String  @id @default(cuid())
+  name        String  @unique
+  code        String  @unique
+  description String?
+  isActive    Boolean @default(true) // inactive = hidden from pickers; existing people/history are untouched
+  managerId   String? // department head (MANAGER role user)
   manager   User?  @relation("DeptManager", fields: [managerId], references: [id])
   shiftId   String? // default shift for the department
   shift     Shift? @relation("DeptShift", fields: [shiftId], references: [id])
-  users     User[]
-  teams     Team[]
+  users        User[]
+  teams        Team[]
+  designations Designation[]
 
   @@index([managerId])
+}
+
+/// Job titles, grouped by department and nested into a hierarchy (a Lead sits under a Manager, …).
+/// Created by admins in the UI — there is deliberately no seed data.
+model Designation {
+  id                  String        @id @default(cuid())
+  name                String
+  description         String?
+  departmentId        String
+  department          Department    @relation(fields: [departmentId], references: [id])
+  parentDesignationId String? // must belong to the SAME department; cycles are rejected by the API
+  parent              Designation?  @relation("DesignationTree", fields: [parentDesignationId], references: [id])
+  children            Designation[] @relation("DesignationTree")
+  levelRank           Int           @default(1) // seniority / sort order among siblings: 1 = top
+  isActive            Boolean       @default(true)
+  users               User[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@unique([departmentId, name])
+  @@index([departmentId])
+  @@index([parentDesignationId])
 }
 
 model Team {
@@ -92,7 +117,9 @@ model User {
   address          String?
   role             String // SUPER_ADMIN | HR_MANAGER | ACCOUNTANT | MANAGER | TEAM_LEAD | EMPLOYEE
   employeeCode     String   @unique // ZKTeco PIN
-  designation      String
+  designation      String // display name (denormalised from designationRef so payslips/reports keep working)
+  designationId    String? // link into the company Designation structure; null = legacy free-text title
+  designationRef   Designation? @relation(fields: [designationId], references: [id])
   departmentId     String?
   department       Department? @relation(fields: [departmentId], references: [id])
   teamId           String?

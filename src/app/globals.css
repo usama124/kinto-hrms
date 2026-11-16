@@ -119,6 +119,12 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Browsers CENTRE <th> by default, so a header with no explicit alignment floated in the middle of its column
+     (looking "to the right" of left-aligned data). Headers now start where the cell data starts. This lives in the
+     base layer, so a column that opts into text-right / text-center still wins. */
+  th {
+    text-align: start;
+  }
 }
 
 /* ─── KINTO HRMS · Glassmorphism + Material 3 design system ────────────── */

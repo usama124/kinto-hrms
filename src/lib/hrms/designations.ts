@@ -1,38 +1,53 @@
 import 'server-only'
 import { db } from '@/lib/db'
 
-/**
- * Company-defined designation list (Setting `org.designations`, a JSON string array).
- * Employees can only be given a designation from this list; HR/Admin maintain it.
- */
-const KEY = 'org.designations'
-export const MAX_DESIGNATIONS = 200
+/** Which company designation does an employee create/update refer to? Prefers the id; falls back to an exact (case-insensitive) name. */
+export type ResolvedDesignation = { id: string; name: string; departmentId: string; departmentName: string }
 
-const tidy = (names: string[]) =>
-  Array.from(new Set(names.map((n) => n.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+export async function resolveDesignation(input: {
+  designationId?: unknown
+  designation?: unknown
+  /** the employee's department, when known — narrows a name match and is checked for consistency */
+  departmentId?: string | null
+}): Promise<{ ok: true; value: ResolvedDesignation } | { ok: false; error: string }> {
+  const pick = (d: { id: string; name: string; departmentId: string; department: { name: string } }): ResolvedDesignation =>
+    ({ id: d.id, name: d.name, departmentId: d.departmentId, departmentName: d.department.name })
+  const include = { department: { select: { name: true } } } as const
+  let found: ResolvedDesignation | null = null
 
-export async function getDesignations(): Promise<string[]> {
-  const row = await db.setting.findUnique({ where: { key: KEY } })
-  if (row) {
-    try {
-      const parsed = JSON.parse(row.value)
-      if (Array.isArray(parsed)) return tidy(parsed.filter((x): x is string => typeof x === 'string'))
-    } catch { /* fall through to re-seed */ }
+  const id = typeof input.designationId === 'string' ? input.designationId : ''
+  if (id) {
+    const d = await db.designation.findUnique({ where: { id }, include })
+    if (!d || !d.isActive) return { ok: false, error: 'That designation does not exist or is inactive.' }
+    found = pick(d)
+  } else {
+    const name = typeof input.designation === 'string' ? input.designation.trim() : ''
+    if (!name) return { ok: false, error: 'A designation is required.' }
+    const matches = await db.designation.findMany({
+      where: { name: { equals: name, mode: 'insensitive' }, isActive: true, ...(input.departmentId ? { departmentId: input.departmentId } : {}) },
+      include,
+    })
+    if (matches.length === 0) {
+      return { ok: false, error: 'Choose a designation defined in Rules & Settings → Designations. If it is missing, an admin must add it under the right department first.' }
+    }
+    if (matches.length > 1) return { ok: false, error: `“${name}” exists in several departments — select the exact designation from the list.` }
+    found = pick(matches[0])
   }
-  // First use: seed from the titles already in use so every existing employee stays valid.
-  const used = await db.user.findMany({ distinct: ['designation'], select: { designation: true } })
-  const list = tidy(used.map((u) => u.designation))
-  await saveDesignations(list)
-  return list
+
+  if (input.departmentId && found.departmentId !== input.departmentId) {
+    return { ok: false, error: `“${found.name}” belongs to the ${found.departmentName} department, not the employee's department.` }
+  }
+  return { ok: true, value: found }
 }
 
-export async function saveDesignations(list: string[]): Promise<void> {
-  const value = JSON.stringify(tidy(list))
-  await db.setting.upsert({ where: { key: KEY }, create: { key: KEY, value }, update: { value } })
-}
-
-/** Case-insensitive lookup → the canonical spelling stored in the list, or null when not defined. */
-export function findDesignation(list: string[], name: string): string | null {
-  const n = name.trim().toLowerCase()
-  return list.find((d) => d.toLowerCase() === n) ?? null
+/** Shape sent to the browser. */
+export function designationDto(d: {
+  id: string; name: string; description: string | null; departmentId: string; parentDesignationId: string | null
+  levelRank: number; isActive: boolean; department?: { name: string } | null; _count?: { users: number }
+}) {
+  return {
+    id: d.id, name: d.name, description: d.description, departmentId: d.departmentId,
+    departmentName: d.department?.name ?? null, parentDesignationId: d.parentDesignationId,
+    levelRank: d.levelRank, isActive: d.isActive, employeeCount: d._count?.users ?? 0,
+  }
 }

@@ -8,7 +8,7 @@ mock.module('@/lib/db', () => ({ db: {} })) // only pure helpers are exercised
 const { loadAuthenticators, serializeAuthenticators, matchAuthenticator, activeAuthenticators } = await import('@/lib/hrms/authenticators')
 const { generateTotpSecret, currentTotp } = await import('@/lib/hrms/totp')
 const { verifyDeviceAuth } = await import('@/lib/hrms/biometric')
-const { findDesignation } = await import('@/lib/hrms/designations')
+const tree = await import('@/lib/hrms/designation-tree')
 
 // ── authenticators ────────────────────────────────────────────────────────────
 test('a legacy single secret is read as one active authenticator', () => {
@@ -50,9 +50,47 @@ test('any registered device authenticates with ITS OWN key + secret; a disabled 
   expect(verifyDeviceAuth([], 'dk_door_key', ts, 'x', body).reason).toBe('Biometric ingestion disabled')
 })
 
-// ── designations ──────────────────────────────────────────────────────────────
-test('designation lookup is case-insensitive and returns the canonical spelling', () => {
-  const list = ['Software Engineer', 'HR Manager']
-  expect(findDesignation(list, '  software engineer ')).toBe('Software Engineer')
-  expect(findDesignation(list, 'Rockstar Ninja')).toBeNull()
+// ── designation hierarchy ─────────────────────────────────────────────────────
+const n = (id: string, parent: string | null, levelRank = 1, name = id, departmentId = 'd1') => ({ id, name, departmentId, parentDesignationId: parent, levelRank })
+//   head ─ manager ─ lead ─ engineer
+const chain = [n('head', null), n('manager', 'head', 2), n('lead', 'manager', 3), n('engineer', 'lead', 4)]
+
+test('a designation cannot be placed under itself or under its own descendants (no loops)', () => {
+  expect(tree.wouldCreateCycle(chain, 'head', 'head')).toBe(true) // itself
+  expect(tree.wouldCreateCycle(chain, 'head', 'engineer')).toBe(true) // its grandchild
+  expect(tree.wouldCreateCycle(chain, 'manager', 'lead')).toBe(true)
+  expect(tree.wouldCreateCycle(chain, 'lead', 'head')).toBe(false) // moving UP the same branch is fine
+  expect(tree.wouldCreateCycle(chain, 'engineer', null)).toBe(false) // becoming a root is fine
+})
+
+test('ancestors, descendants and depth', () => {
+  expect(tree.ancestorsOf(chain, 'engineer')).toEqual(['lead', 'manager', 'head'])
+  expect([...tree.descendantsOf(chain, 'manager')].sort()).toEqual(['engineer', 'lead'])
+  expect(tree.depthOf(chain, 'engineer')).toBe(3)
+  expect(tree.subtreeHeight(chain, 'head')).toBe(3)
+})
+
+test('corrupt cyclic data cannot hang the walkers', () => {
+  const bad = [n('a', 'b'), n('b', 'a')]
+  expect(tree.ancestorsOf(bad, 'a').length).toBeLessThanOrEqual(3)
+  expect(tree.orderedTree(bad)).toHaveLength(0) // nothing is a root, nothing loops
+})
+
+test('maximum nesting depth is enforced for new leaves and for moved subtrees', () => {
+  const deep = Array.from({ length: tree.MAX_DESIGNATION_DEPTH + 1 }, (_, i) => n(`n${i}`, i ? `n${i - 1}` : null)) // depth 0..MAX
+  expect(tree.exceedsMaxDepth(deep, null, `n${tree.MAX_DESIGNATION_DEPTH}`)).toBe(true) // one level too many
+  expect(tree.exceedsMaxDepth(deep, null, `n${tree.MAX_DESIGNATION_DEPTH - 1}`)).toBe(false)
+  expect(tree.exceedsMaxDepth([...chain, n('x', null)], 'head', 'x')).toBe(false) // 4-level subtree under a root is fine
+})
+
+test('display order: roots by level rank then name, children nested right after their parent, orphans shown as roots', () => {
+  const list = [n('b', null, 2, 'Beta'), n('a', null, 1, 'Zed'), n('a1', 'a', 2, 'Kid'), n('c', null, 2, 'Alpha'), n('o', 'missing', 9, 'Orphan')]
+  expect(tree.orderedTree(list).map((d) => `${d.depth}:${d.name}`)).toEqual(['0:Zed', '1:Kid', '0:Alpha', '0:Beta', '0:Orphan'])
+})
+
+test('level rank input: optional, 1–99 whole numbers only', () => {
+  expect(tree.parseLevelRank(undefined)).toBeUndefined()
+  expect(tree.parseLevelRank('')).toBeUndefined()
+  expect(tree.parseLevelRank('3')).toBe(3)
+  for (const bad of [0, 100, 1.5, 'abc', -2]) expect(tree.parseLevelRank(bad)).toBe('invalid')
 })

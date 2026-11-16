@@ -106,7 +106,7 @@ export type PersonLite = {
 /** Full 360° employee payload from GET /api/employees/[id]. */
 export type Employee360 = {
   id: string; fullName: string; email: string; role: string
-  employeeCode: string; designation: string
+  employeeCode: string; designation: string; designationId?: string | null
   departmentName: string; departmentId: string | null
   teamId: string | null; teamName: string | null
   joiningDate: string; avatarColor: string; avatarUploadId?: string | null
@@ -144,11 +144,11 @@ export type OrgStructure = {
 }
 
 export type Meta = {
-  departments: { id: string; name: string; code: string; managerId?: string | null }[]
+  departments: { id: string; name: string; code: string; managerId?: string | null; isActive?: boolean; description?: string | null }[]
   leaveTypes: { id: string; name: string; code: string; annualQuota: number; colorCode: string; monthlyCap: number | null; attachmentThreshold: number | null; isPaid: boolean }[]
   shifts: { id: string; name: string; startTime: string; endTime: string; expectedMinutes: number; graceMinutes: number; workingDays?: string }[]
   teams: { id: string; name: string; departmentId: string; teamLeadId: string | null; teamLeadName?: string | null }[]
-  designations: string[]
+  designations: { id: string; name: string; departmentId: string; departmentName: string; parentDesignationId: string | null; levelRank: number }[]
   holidays: string[]
   weeklyOffDay: number
   graceMinutes: number

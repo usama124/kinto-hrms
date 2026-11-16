@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canAccessUser } from '@/lib/hrms/rbac'
 import { isOrgAdmin, isAccountsRole, isSysAdminGrantedRole, ROLES, EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
-import { getDesignations, findDesignation } from '@/lib/hrms/designations'
+import { resolveDesignation } from '@/lib/hrms/designations'
 import { writeAuditDiff } from '@/lib/hrms/audit'
 import { revokeAllForUser } from '@/lib/hrms/tokens'
 
@@ -46,7 +46,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     return ok({
       employee: {
         id: u.id, fullName: u.fullName, email: u.email, role: u.role,
-        employeeCode: u.employeeCode, designation: u.designation,
+        employeeCode: u.employeeCode, designation: u.designation, designationId: u.designationId,
         departmentName: u.department?.name ?? '—', departmentId: u.departmentId,
         teamId: u.teamId, teamName: u.team?.name ?? null,
         joiningDate: u.joiningDate,
@@ -124,16 +124,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (!v) return fail('Full name cannot be empty.', 422)
       next.fullName = v
     }
-    if (body.designation !== undefined) {
-      const v = String(body.designation ?? '').trim().slice(0, 80).replace(/<[^>]*>/g, '')
-      if (!v) return fail('Designation cannot be empty.', 422)
-      // unchanged titles (legacy / pre-list data) pass; any NEW title must exist in the company list
-      if (v.toLowerCase() !== u.designation.toLowerCase()) {
-        const canon = findDesignation(await getDesignations(), v)
-        if (!canon) return fail('Choose a designation from the company list. If it is missing, add it first under Rules & Settings → Org & Shifts.', 422)
-        next.designation = canon
-      }
-    }
     if (body.role !== undefined) {
       const v = String(body.role)
       if (!['EMPLOYEE', 'TEAM_LEAD', 'MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'HR_MANAGER'].includes(v)) return fail('Invalid role.', 422)
@@ -207,6 +197,35 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         if (v === id) return fail('An employee cannot report to themselves.', 422)
         next[f] = v
       }
+    }
+
+    // ── designation (company structure) ─────────────────────────────────────────
+    // The designation must exist in Rules & Settings → Designations and belong to the employee's department.
+    // Leaving a legacy free-text title untouched is allowed, so old records stay editable.
+    const effectiveDept: string | null = body.departmentId !== undefined ? (body.departmentId ? String(body.departmentId) : null) : u.departmentId
+    const wantsId = typeof body.designationId === 'string' && body.designationId ? body.designationId : null
+    const nameIn = body.designation !== undefined ? String(body.designation ?? '').trim().slice(0, 80).replace(/<[^>]*>/g, '') : null
+    if (body.designationId !== undefined || body.designation !== undefined) {
+      const unchanged = wantsId ? wantsId === u.designationId : nameIn !== null && nameIn.toLowerCase() === u.designation.toLowerCase()
+      if (!wantsId && !nameIn) return fail('Designation cannot be empty.', 422)
+      if (!unchanged) {
+        const resolved = await resolveDesignation({ designationId: wantsId, designation: nameIn, departmentId: effectiveDept })
+        if (!resolved.ok) return fail(resolved.error, 422)
+        next.designation = resolved.value.name
+        next.designationId = resolved.value.id
+        if (!effectiveDept) next.departmentId = resolved.value.departmentId
+      }
+    }
+    if (body.departmentId !== undefined && next.designationId === undefined && u.designationId && effectiveDept) {
+      // moving departments while keeping a designation that belongs to the old one would break the structure
+      const held = await db.designation.findUnique({ where: { id: u.designationId }, include: { department: { select: { name: true } } } })
+      if (held && held.departmentId !== effectiveDept) {
+        return fail(`This employee holds “${held.name}” (${held.department.name}). Choose a designation from the new department as well.`, 422)
+      }
+    }
+    if (body.departmentId && next.departmentId !== undefined && next.departmentId !== u.departmentId) {
+      const d = await db.department.findUnique({ where: { id: String(next.departmentId) }, select: { isActive: true, name: true } })
+      if (d && !d.isActive) return fail(`${d.name} is inactive — pick an active department.`, 422)
     }
 
     if (body.employmentStatus !== undefined) {

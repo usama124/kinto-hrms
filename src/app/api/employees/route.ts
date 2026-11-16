@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin, isSysAdminGrantedRole, ROLES, EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
-import { getDesignations, findDesignation } from '@/lib/hrms/designations'
+import { resolveDesignation } from '@/lib/hrms/designations'
 import { cleanText, cleanEmail, cleanNumber, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { visibleUserIds, canSeeCompensation } from '@/lib/hrms/rbac'
@@ -66,14 +66,11 @@ export async function POST(req: NextRequest) {
     const designationInput = cleanText(body.designation, 80)
     const joiningDate = cleanDateKey(body.joiningDate)
 
-    if (!fullName || !email || !designationInput || !joiningDate) {
+    if (!fullName || !email || !(designationInput || body.designationId) || !joiningDate) {
       return fail('Full name, email, designation and joining date are required.', 422)
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Invalid email address.', 422)
     if (!CREATABLE_BY_ADMIN.includes(role)) return fail('Invalid role.', 422)
-    // designation must be one the company admin has defined — no free-text titles
-    const designation = findDesignation(await getDesignations(), designationInput)
-    if (!designation) return fail('Choose a designation from the company list. If it is missing, add it first under Rules & Settings → Org & Shifts.', 422)
     if (body.employmentStatus !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(String(body.employmentStatus))) {
       return fail(`Employment status must be one of: ${EMPLOYMENT_STATUSES.join(', ')}.`, 422)
     }
@@ -95,16 +92,27 @@ export async function POST(req: NextRequest) {
     if (codeExists) return fail('Employee code already in use.', 409)
 
     // Validate optional relations
-    const departmentId = body.departmentId ? String(body.departmentId) : null
+    let departmentId = body.departmentId ? String(body.departmentId) : null
     const teamId = body.teamId ? String(body.teamId) : null
     const teamLeadId = body.teamLeadId ? String(body.teamLeadId) : null
     const managerId = body.managerId ? String(body.managerId) : null
     const shiftId = body.shiftId ? String(body.shiftId) : null
-    if (departmentId && !(await db.department.findUnique({ where: { id: departmentId } }))) return fail('Department not found.', 422)
+    if (departmentId) {
+      const dept = await db.department.findUnique({ where: { id: departmentId } })
+      if (!dept) return fail('Department not found.', 422)
+      if (!dept.isActive) return fail(`${dept.name} is inactive — pick an active department.`, 422)
+    }
     if (teamId && !(await db.team.findUnique({ where: { id: teamId } }))) return fail('Team not found.', 422)
     if (teamLeadId && !(await db.user.findUnique({ where: { id: teamLeadId } }))) return fail('Team Lead not found.', 422)
     if (managerId && !(await db.user.findUnique({ where: { id: managerId } }))) return fail('Manager not found.', 422)
     if (shiftId && !(await db.shift.findUnique({ where: { id: shiftId } }))) return fail('Shift not found.', 422)
+
+    // The designation must come from the company structure (Rules & Settings → Designations), not free text, and
+    // must belong to the employee's department. With no department chosen, the designation's department is used.
+    const resolved = await resolveDesignation({ designationId: body.designationId, designation: designationInput, departmentId })
+    if (!resolved.ok) return fail(resolved.error, 422)
+    const designation = resolved.value
+    departmentId = departmentId ?? designation.departmentId
 
     const dob = cleanDateKey(body.dateOfBirth)
     // no shared default password any more: an explicit password must meet the policy, otherwise a random one is generated
@@ -141,7 +149,8 @@ export async function POST(req: NextRequest) {
         address: cleanText(body.address, 200) || null,
         role,
         employeeCode,
-        designation,
+        designation: designation.name,
+        designationId: designation.id,
         departmentId,
         teamId,
         teamLeadId,

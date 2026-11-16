@@ -1,13 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck, Fingerprint, ScrollText, Clock, Building, Plus, Save, Trash2 } from 'lucide-react'
+import { ShieldCheck, Fingerprint, ScrollText, Clock, Building, Plus, Save, Trash2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError, dateTimeLabel, type SessionUser, type AuditRow } from '@/lib/hrms/client'
 import { GlassCard, Pill, SectionTitle, EmptyState } from './shared'
 import { MfaManager } from './mfa-manager'
 import { BiometricDevices } from './biometric-devices'
-import { DesignationsCard } from './designations-card'
+import { DesignationManager } from './designation-manager'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,19 +29,21 @@ export function RulesView({ user }: { user: SessionUser }) {
     <div className="space-y-4">
       <div>
         <h1 className="text-lg md:text-xl font-bold text-slate-800">Rules & Settings</h1>
-        <p className="text-xs text-slate-500 mt-0.5">Policy engine · Leave caps · Shifts · Organization · Security</p>
+        <p className="text-xs text-slate-500 mt-0.5">Policy engine · Leave caps · Shifts · Organization · Designations · Security</p>
       </div>
 
       <Tabs defaultValue="policy" className="space-y-4">
         <TabsList className="glass-strong flex-wrap h-auto gap-1 p-1.5">
           <TabsTrigger value="policy" className="text-xs">Policy Rules</TabsTrigger>
           <TabsTrigger value="org" className="text-xs">Org & Shifts</TabsTrigger>
+          <TabsTrigger value="designations" className="text-xs">Designations</TabsTrigger>
           <TabsTrigger value="security" className="text-xs">Security & MFA</TabsTrigger>
           <TabsTrigger value="audit" className="text-xs">Audit Logs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="policy"><PolicyTab onChanged={() => {}} /></TabsContent>
         <TabsContent value="org"><OrgTab /></TabsContent>
+        <TabsContent value="designations"><DesignationManager /></TabsContent>
         <TabsContent value="security"><SecurityTab user={user} /></TabsContent>
         <TabsContent value="audit"><AuditTab canView={isSuperAdmin || user.role === 'HR_MANAGER'} /></TabsContent>
       </Tabs>
@@ -60,6 +62,8 @@ function PolicyTab(_props: { onChanged: () => void }) {
   const [newHoliday, setNewHoliday] = useState({ date: '', name: '' })
   const [newRule, setNewRule] = useState({ label: '', value: '', category: 'GENERAL' })
   const [ltOpen, setLtOpen] = useState(false)
+  const [ltEditId, setLtEditId] = useState<string | null>(null) // null = adding a new leave type
+  const [holidayYear, setHolidayYear] = useState(String(new Date().getFullYear()))
   const [lt, setLt] = useState({ name: '', code: '', annualQuota: 10, isPaid: true, colorCode: '#0D9488', monthlyCap: '', attachmentThreshold: '' })
 
   const load = useCallback(async () => {
@@ -111,18 +115,37 @@ function PolicyTab(_props: { onChanged: () => void }) {
     } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not delete the rule') }
   }
 
-  async function addLeaveType() {
+  const EMPTY_LT = { name: '', code: '', annualQuota: 10, isPaid: true, colorCode: '#0D9488', monthlyCap: '', attachmentThreshold: '' }
+
+  function openAddLeaveType() {
+    setLtEditId(null)
+    setLt(EMPTY_LT)
+    setLtOpen(true)
+  }
+
+  function openEditLeaveType(t: LeaveTypeRow) {
+    setLtEditId(t.id)
+    setLt({ name: t.name, code: t.code, annualQuota: t.annualQuota, isPaid: t.isPaid, colorCode: t.colorCode, monthlyCap: t.monthlyCap == null ? '' : String(t.monthlyCap), attachmentThreshold: t.attachmentThreshold == null ? '' : String(t.attachmentThreshold) })
+    setLtOpen(true)
+  }
+
+  async function saveLeaveType() {
     setSaving(true)
+    const caps = { monthlyCap: lt.monthlyCap === '' ? null : Number(lt.monthlyCap), attachmentThreshold: lt.attachmentThreshold === '' ? null : Number(lt.attachmentThreshold) }
     try {
-      await api('/api/leave-types', {
-        method: 'POST',
-        body: JSON.stringify({ ...lt, code: lt.code.trim().toUpperCase(), monthlyCap: lt.monthlyCap === '' ? null : Number(lt.monthlyCap), attachmentThreshold: lt.attachmentThreshold === '' ? null : Number(lt.attachmentThreshold) }),
-      })
-      toast.success('Leave type added — every employee now has a balance for it')
+      if (ltEditId) {
+        // the code is immutable (payroll finds CASUAL / ANNUAL by code), so it is not sent
+        await api('/api/leave-types', { method: 'PATCH', body: JSON.stringify({ id: ltEditId, name: lt.name, annualQuota: lt.annualQuota, isPaid: lt.isPaid, colorCode: lt.colorCode, ...caps }) })
+        toast.success('Leave type updated — audit logged')
+      } else {
+        await api('/api/leave-types', { method: 'POST', body: JSON.stringify({ ...lt, code: lt.code.trim().toUpperCase(), ...caps }) })
+        toast.success('Leave type added — every employee now has a balance for it')
+      }
       setLtOpen(false)
-      setLt({ name: '', code: '', annualQuota: 10, isPaid: true, colorCode: '#0D9488', monthlyCap: '', attachmentThreshold: '' })
+      setLtEditId(null)
+      setLt(EMPTY_LT)
       void load()
-    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not add the leave type') } finally { setSaving(false) }
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not save the leave type') } finally { setSaving(false) }
   }
 
   async function addHoliday() {
@@ -135,9 +158,10 @@ function PolicyTab(_props: { onChanged: () => void }) {
     } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed') }
   }
 
-  async function removeHoliday(date: string) {
+  async function removeHoliday(h: HolidayRow) {
+    if (!window.confirm(`Remove the holiday “${h.name}” on ${holidayLong(h.date)}?`)) return
     try {
-      await api('/api/rules', { method: 'PUT', body: JSON.stringify({ removeHoliday: date }) })
+      await api('/api/rules', { method: 'PUT', body: JSON.stringify({ removeHoliday: h.date }) })
       toast.success('Holiday removed')
       void load()
     } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed') }
@@ -203,28 +227,30 @@ function PolicyTab(_props: { onChanged: () => void }) {
       </GlassCard>
 
       <GlassCard className="p-5">
-        <SectionTitle action={<Button size="sm" variant="outline" onClick={() => setLtOpen(true)} className="h-8 text-xs"><Plus className="h-3.5 w-3.5 mr-1" />Add leave type</Button>}>
+        <SectionTitle action={<Button size="sm" variant="outline" onClick={openAddLeaveType} className="h-8 text-xs"><Plus className="h-3.5 w-3.5 mr-1" />Add leave type</Button>}>
           Leave Types — Annual Quotas, Monthly Caps & Conditional Certificates
         </SectionTitle>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[640px]">
             <thead className="text-slate-400">
               <tr>
-                <th className="text-left py-2 font-medium">Type</th>
-                <th className="text-right px-3 py-2 font-medium">Annual Quota</th>
-                <th className="text-right px-3 py-2 font-medium">Monthly Cap</th>
-                <th className="text-right px-3 py-2 font-medium">Certificate after</th>
-                <th className="text-left px-3 py-2 font-medium">Paid</th>
+                <th className="text-left px-3 py-2 font-medium">Type</th>
+                <th className="text-center px-3 py-2 font-medium">Annual Quota</th>
+                <th className="text-center px-3 py-2 font-medium">Monthly Cap</th>
+                <th className="text-center px-3 py-2 font-medium">Certificate after</th>
+                <th className="text-center px-3 py-2 font-medium">Paid</th>
+                <th className="text-center px-3 py-2 font-medium">Edit</th>
               </tr>
             </thead>
             <tbody>
               {leaveTypes.map((t) => (
                 <tr key={t.id} className="border-t border-slate-100">
-                  <td className="py-2"><span className="inline-flex items-center gap-2 font-semibold text-slate-700"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.colorCode }} />{t.name}</span></td>
-                  <td className="text-right px-3 py-2"><Input type="number" min={0} value={t.annualQuota} onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, annualQuota: Number(e.target.value) } : x))} className="w-20 h-8 bg-white/70 text-right tnum" /></td>
-                  <td className="text-right px-3 py-2"><Input type="number" min={0} value={t.monthlyCap ?? ''} placeholder="∞" onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, monthlyCap: e.target.value === '' ? null : Number(e.target.value) } : x))} className="w-20 h-8 bg-white/70 text-right tnum" /></td>
-                  <td className="text-right px-3 py-2"><Input type="number" min={0} value={t.attachmentThreshold ?? ''} placeholder="—" onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, attachmentThreshold: e.target.value === '' ? null : Number(e.target.value) } : x))} className="w-20 h-8 bg-white/70 text-right tnum" /></td>
-                  <td className="px-3 py-2"><Pill text={t.isPaid ? 'PAID' : 'UNPAID'} tone={t.isPaid ? 'emerald' : 'slate'} /></td>
+                  <td className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2 font-semibold text-slate-700"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.colorCode }} />{t.name}</span></td>
+                  <td className="text-center px-3 py-2"><Input type="number" min={0} value={t.annualQuota} onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, annualQuota: Number(e.target.value) } : x))} className="mx-auto w-20 h-8 bg-white/70 text-center tnum" /></td>
+                  <td className="text-center px-3 py-2"><Input type="number" min={0} value={t.monthlyCap ?? ''} placeholder="∞" onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, monthlyCap: e.target.value === '' ? null : Number(e.target.value) } : x))} className="mx-auto w-20 h-8 bg-white/70 text-center tnum" /></td>
+                  <td className="text-center px-3 py-2"><Input type="number" min={0} value={t.attachmentThreshold ?? ''} placeholder="—" onChange={(e) => setLeaveTypes((ts) => ts.map((x) => x.id === t.id ? { ...x, attachmentThreshold: e.target.value === '' ? null : Number(e.target.value) } : x))} className="mx-auto w-20 h-8 bg-white/70 text-center tnum" /></td>
+                  <td className="px-3 py-2 text-center"><Pill text={t.isPaid ? 'PAID' : 'UNPAID'} tone={t.isPaid ? 'emerald' : 'slate'} /></td>
+                  <td className="px-3 py-2 text-center"><Button size="sm" variant="outline" onClick={() => openEditLeaveType(t)} className="h-8 text-xs"><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Button></td>
                 </tr>
               ))}
             </tbody>
@@ -234,27 +260,22 @@ function PolicyTab(_props: { onChanged: () => void }) {
       </GlassCard>
 
       <GlassCard className="p-5">
-        <SectionTitle>Holiday Calendar</SectionTitle>
+        <SectionTitle action={<span className="text-[11px] text-slate-400 tnum">{holidays.length} holiday{holidays.length === 1 ? '' : 's'} defined</span>}>Holiday Calendar</SectionTitle>
         <div className="flex flex-wrap items-end gap-2 mb-3">
           <div className="space-y-1"><Label className="text-[11px] text-slate-500">Date</Label><Input type="date" value={newHoliday.date} onChange={(e) => setNewHoliday((h) => ({ ...h, date: e.target.value }))} className="h-8 bg-white/70 text-xs" /></div>
           <div className="space-y-1"><Label className="text-[11px] text-slate-500">Name</Label><Input value={newHoliday.name} onChange={(e) => setNewHoliday((h) => ({ ...h, name: e.target.value }))} placeholder="e.g., Quaid Day" className="h-8 bg-white/70 text-xs w-44" /></div>
           <Button size="sm" onClick={addHoliday} className="h-8 bg-teal-600 hover:bg-teal-700 text-white text-xs"><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>
         </div>
-        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto hrms-scroll">
-          {holidays.map((h) => (
-            <button key={h.id} onClick={() => removeHoliday(h.date)} className="glass-subtle rounded-full px-2.5 py-1 text-[11px] text-slate-600 hover:bg-rose-50 hover:text-rose-600 transition-colors" title="Click to remove">
-              {h.date} · {h.name}
-            </button>
-          ))}
-        </div>
+        <HolidayList holidays={holidays} year={holidayYear} onYear={setHolidayYear} onRemove={removeHoliday} />
       </GlassCard>
 
       <Dialog open={ltOpen} onOpenChange={setLtOpen}>
         <DialogContent className="sm:max-w-md glass-strong">
-          <DialogHeader><DialogTitle className="text-sm">Add leave type</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-sm">{ltEditId ? 'Edit leave type' : 'Add leave type'}</DialogTitle></DialogHeader>
+          {ltEditId && <p className="text-[11px] text-slate-500">Quota, caps and the paid/unpaid setting apply to new requests and to payroll runs created from now on. Finalized payslips are never changed.</p>}
           <div className="grid grid-cols-2 gap-3 py-1">
             <div className="col-span-2 space-y-1"><Label className="text-[11px] text-slate-500">Name *</Label><Input value={lt.name} onChange={(e) => setLt((f) => ({ ...f, name: e.target.value }))} maxLength={40} placeholder="e.g., Maternity Leave" className="bg-white/70 h-9" /></div>
-            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Code * (A–Z, 0–9, _)</Label><Input value={lt.code} onChange={(e) => setLt((f) => ({ ...f, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }))} maxLength={12} placeholder="MATERNITY" className="bg-white/70 h-9" /></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">{ltEditId ? 'Code (cannot be changed)' : 'Code * (A–Z, 0–9, _)'}</Label><Input disabled={!!ltEditId} value={lt.code} onChange={(e) => setLt((f) => ({ ...f, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }))} maxLength={12} placeholder="MATERNITY" className="bg-white/70 h-9" /></div>
             <div className="space-y-1"><Label className="text-[11px] text-slate-500">Annual quota (days)</Label><Input type="number" min={0} max={365} value={lt.annualQuota} onChange={(e) => setLt((f) => ({ ...f, annualQuota: Number(e.target.value) }))} className="bg-white/70 h-9 tnum" /></div>
             <div className="space-y-1"><Label className="text-[11px] text-slate-500">Monthly cap (optional)</Label><Input type="number" min={1} max={31} value={lt.monthlyCap} onChange={(e) => setLt((f) => ({ ...f, monthlyCap: e.target.value }))} placeholder="∞" className="bg-white/70 h-9 tnum" /></div>
             <div className="space-y-1"><Label className="text-[11px] text-slate-500">Certificate after (days)</Label><Input type="number" min={1} max={31} value={lt.attachmentThreshold} onChange={(e) => setLt((f) => ({ ...f, attachmentThreshold: e.target.value }))} placeholder="—" className="bg-white/70 h-9 tnum" /></div>
@@ -263,7 +284,7 @@ function PolicyTab(_props: { onChanged: () => void }) {
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setLtOpen(false)}>Cancel</Button>
-            <Button size="sm" disabled={saving || lt.name.trim().length < 2 || lt.code.length < 2} onClick={addLeaveType} className="bg-teal-600 hover:bg-teal-700 text-white">Add</Button>
+            <Button size="sm" disabled={saving || lt.name.trim().length < 2 || lt.code.length < 2} onClick={saveLeaveType} className="bg-teal-600 hover:bg-teal-700 text-white">{ltEditId ? 'Save changes' : 'Add'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -371,8 +392,6 @@ function OrgTab() {
           ))}
         </div>
       </GlassCard>
-
-      <DesignationsCard />
 
       <GlassCard className="p-5">
         <SectionTitle>Shift Templates (Office Timing Configuration)</SectionTitle>
@@ -593,6 +612,62 @@ function daysLabel(json: string): string {
     const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     return arr.map((d) => names[d - 1] ?? d).join(' · ')
   } catch { return json }
+}
+
+const holidayLong = (key: string) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${key}T00:00:00Z`))
+
+/** One holiday per row — big date tile, full weekday/date, upcoming/past status and an explicit Remove button. */
+function HolidayList({ holidays, year, onYear, onRemove }: {
+  holidays: HolidayRow[]; year: string; onYear: (y: string) => void; onRemove: (h: HolidayRow) => void
+}) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' }) // YYYY-MM-DD in Karachi
+  const years = Array.from(new Set([...holidays.map((h) => h.date.slice(0, 4)), String(new Date().getFullYear())])).sort()
+  const shown = holidays.filter((h) => h.date.startsWith(year)).sort((a, b) => a.date.localeCompare(b.date))
+  const tile = (key: string) => {
+    const d = new Date(`${key}T00:00:00Z`)
+    return {
+      mon: new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'short' }).format(d),
+      day: new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric' }).format(d),
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {years.map((y) => (
+          <button key={y} type="button" onClick={() => onYear(y)} className={`rounded-full px-3 py-1 text-[11px] font-medium tnum transition-colors ${y === year ? 'bg-teal-600 text-white' : 'glass-subtle text-slate-500 hover:text-teal-700'}`}>
+            {y}{holidays.filter((h) => h.date.startsWith(y)).length ? ` · ${holidays.filter((h) => h.date.startsWith(y)).length}` : ''}
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="text-xs text-slate-400 py-4 text-center">No holidays defined for {year}. Add one above.</p>
+      ) : (
+        <ul className="max-h-80 space-y-2 overflow-y-auto hrms-scroll pr-1">
+          {shown.map((h) => {
+            const t = tile(h.date)
+            const status = h.date === today ? { text: 'TODAY', tone: 'amber' } : h.date > today ? { text: 'UPCOMING', tone: 'emerald' } : { text: 'PAST', tone: 'slate' }
+            return (
+              <li key={h.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white/60 px-3 py-2">
+                <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                  <span className="text-[10px] font-semibold uppercase leading-none">{t.mon}</span>
+                  <span className="text-lg font-bold leading-tight tnum">{t.day}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-700">{h.name}</p>
+                  <p className="text-[11px] text-slate-500">{holidayLong(h.date)}</p>
+                </div>
+                <Pill text={status.text} tone={status.tone} />
+                <Button type="button" size="sm" variant="outline" onClick={() => onRemove(h)} className="h-8 shrink-0 border-rose-200 text-xs text-rose-600 hover:bg-rose-50">
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />Remove
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function LoadingBlock() {

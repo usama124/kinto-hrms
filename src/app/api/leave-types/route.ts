@@ -45,4 +45,56 @@ export async function POST(req: NextRequest) {
   })
 }
 
+/**
+ * Edit a leave type (Admin / HR): name, colour, paid/unpaid, annual quota, monthly cap, certificate threshold.
+ * The CODE is deliberately immutable — payroll finds CASUAL / ANNUAL by code to convert short hours into leave days.
+ * A paid/unpaid change applies to payroll runs created afterwards; finalized payslips are snapshots and stay as they were.
+ */
+export async function PATCH(req: NextRequest) {
+  return guard(async () => {
+    const session = await requireSession()
+    if (!isOrgAdmin(session.role)) return fail('Forbidden: only Admin / HR can edit leave types.', 403)
+    const body = await req.json().catch(() => null)
+    const cur = await db.leaveType.findUnique({ where: { id: String(body?.id ?? '') } })
+    if (!cur) return fail('Leave type not found.', 404)
+
+    const data: { name?: string; colorCode?: string; isPaid?: boolean; annualQuota?: number; monthlyCap?: number | null; attachmentThreshold?: number | null } = {}
+    if (body.name !== undefined) {
+      const name = cleanText(body.name, 40)
+      if (name.length < 2) return fail('Leave type name is required.', 422)
+      if (name !== cur.name) {
+        if (await db.leaveType.findFirst({ where: { name, NOT: { id: cur.id } }, select: { id: true } })) return fail('Another leave type already has this name.', 409)
+        data.name = name
+      }
+    }
+    if (body.colorCode !== undefined) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(String(body.colorCode))) return fail('Colour must be a hex value like #0D9488.', 422)
+      data.colorCode = String(body.colorCode)
+    }
+    if (body.isPaid !== undefined) data.isPaid = Boolean(body.isPaid)
+    if (body.annualQuota !== undefined) {
+      const q = Number(body.annualQuota)
+      if (!Number.isFinite(q) || q < 0 || q > 365) return fail('Annual quota must be between 0 and 365.', 422)
+      data.annualQuota = q
+    }
+    for (const f of ['monthlyCap', 'attachmentThreshold'] as const) {
+      if (body[f] === undefined) continue
+      const v = body[f] === null || body[f] === '' ? null : Math.floor(Number(body[f]))
+      if (v !== null && (!Number.isFinite(v) || v < 1 || v > 31)) return fail('Monthly cap / certificate threshold must be 1–31 days (or empty).', 422)
+      data[f] = v
+    }
+
+    const changes = (Object.keys(data) as (keyof typeof data)[]).filter((k) => data[k] !== cur[k])
+    if (!changes.length) return fail('No changes provided.', 422)
+    const updated = await db.leaveType.update({ where: { id: cur.id }, data })
+    await writeAudit({
+      actorId: session.userId, actorName: session.fullName, actorRole: session.role,
+      entityType: 'RULE', entityId: cur.id, fieldName: 'leaveType.updated',
+      oldValue: changes.map((k) => `${k}=${cur[k]}`).join('; '), newValue: changes.map((k) => `${k}=${updated[k]}`).join('; '),
+      reason: `Leave type “${cur.name}” updated`, ipAddress: clientIp(req),
+    })
+    return ok({ leaveType: updated })
+  })
+}
+
 export const dynamic = 'force-dynamic'
