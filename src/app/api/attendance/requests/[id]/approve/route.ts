@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { canApproveAttendanceAtStage, nextStageOf } from '@/lib/hrms/rbac'
+import { canApproveAttendanceAtStage, nextStageOf, hrStageRole } from '@/lib/hrms/rbac'
 import { applyRegularizationToLog } from '@/lib/hrms/regularization'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     if (next) {
       const approverId = next.stage === 'MANAGER' ? request.user.managerId : null
-      const notifyId = approverId ?? (await db.user.findFirst({ where: { role: 'HR_MANAGER', isActive: true }, select: { id: true } }))?.id
+      const notifyId = approverId ?? (await db.user.findFirst({ where: { role: hrStageRole(request.user), isActive: true }, select: { id: true } }))?.id
       if (notifyId) {
         await db.notification.create({ data: { userId: notifyId, title: 'Attendance regularization escalated', body: `${request.user.fullName} · ${request.date} — awaiting your approval.`, type: 'APPROVAL' } })
       }

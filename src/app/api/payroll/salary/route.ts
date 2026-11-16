@@ -23,6 +23,8 @@ export async function PATCH(req: NextRequest) {
     const target = await db.user.findUnique({ where: { id: userId } })
     if (!target) return fail('Employee not found.', 404)
     if (target.role === 'SUPER_ADMIN') return fail('System Admin has no salary profile.', 403)
+    // segregation of duties: nobody changes their own pay
+    if (target.id === session.userId) return fail('Forbidden: you cannot change your own salary components.', 403)
 
     const patch: { baseSalary?: number; hrAllowance?: number; utilityAllowance?: number; fatherName?: string; bankIban?: string } = {}
     if (body?.baseSalary != null) patch.baseSalary = Math.max(0, cleanNumber(body.baseSalary, target.baseSalary))

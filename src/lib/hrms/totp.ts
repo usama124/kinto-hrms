@@ -1,4 +1,5 @@
 import { APP_NAME } from '@/lib/hrms/constants'
+import { keyedHash } from '@/lib/hrms/secrets'
 // ─── TOTP (RFC 6238) — Google Authenticator / Authy compatible ────────────────
 // Dependency-free implementation: base32 secret, HMAC-SHA1, 30s step, 6 digits.
 
@@ -77,20 +78,44 @@ export function verifyTotp(secret: string, code: string, window = 1, stepSeconds
   return false
 }
 
+// A code is single-use: remember the newest accepted time-step per user and refuse anything at or before it.
+// ponytail: process-local; use a shared store (Redis/DB column) if running more than one server instance.
+const lastAcceptedStep = new Map<string, number>()
+
+export function verifyTotpOnce(userId: string, secret: string, code: string, window = 1, stepSeconds = 30): boolean {
+  const clean = (code ?? '').replace(/\D/g, '')
+  if (clean.length !== 6) return false
+  const secretBuf = base32Decode(secret)
+  const counter = Math.floor(Date.now() / 1000 / stepSeconds)
+  for (let i = -window; i <= window; i++) {
+    const a = Buffer.from(hotp(secretBuf, counter + i))
+    const b = Buffer.from(clean)
+    if (a.length === b.length && timingSafeEqual(a, b)) {
+      if (counter + i <= (lastAcceptedStep.get(userId) ?? -1)) return false // replay
+      lastAcceptedStep.set(userId, counter + i)
+      return true
+    }
+  }
+  return false
+}
+
 export function otpauthUri(email: string, secret: string, issuer = APP_NAME): string {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`
 }
 
 // ─── Backup recovery codes (hashed, one-time) ────────────────────────────────
 
+// 64-bit codes, stored as a keyed HMAC (a leaked table can't be brute-forced offline like the old
+// unsalted 40-bit sha256). Legacy sha256 hashes already in the database keep working until used.
+const normalizeBackup = (code: string) => (code ?? '').toUpperCase().replace(/[\s-]/g, '')
+
 export function generateBackupCodes(count = 8): { plain: string[]; hashes: string[] } {
   const plain: string[] = []
   const hashes: string[] = []
   for (let i = 0; i < count; i++) {
-    const raw = randomBytes(5).toString('hex').toUpperCase() // 10 hex chars
-    const code = `${raw.slice(0, 5)}-${raw.slice(5)}`
-    plain.push(code)
-    hashes.push(sha256Hex(code))
+    const raw = randomBytes(8).toString('hex').toUpperCase() // 16 hex chars
+    plain.push(`${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12)}`)
+    hashes.push(keyedHash(raw))
   }
   return { plain, hashes }
 }
@@ -102,7 +127,8 @@ export function sha256Hex(input: string): string {
 export function verifyBackupCode(code: string, hashesJson: string | null): { ok: boolean; remaining: string[] } {
   if (!hashesJson) return { ok: false, remaining: [] }
   const hashes: string[] = JSON.parse(hashesJson)
-  const h = sha256Hex((code ?? '').trim().toUpperCase())
-  if (!hashes.includes(h)) return { ok: false, remaining: hashes }
-  return { ok: true, remaining: hashes.filter((x) => x !== h) }
+  const candidates = [keyedHash(normalizeBackup(code)), sha256Hex((code ?? '').trim().toUpperCase())]
+  const hit = hashes.find((h) => candidates.includes(h))
+  if (!hit) return { ok: false, remaining: hashes }
+  return { ok: true, remaining: hashes.filter((x) => x !== hit) }
 }

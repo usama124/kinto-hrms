@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { visibleUserIds, canApproveAttendanceAtStage, nextStageOf } from '@/lib/hrms/rbac'
+import { visibleUserIds, nextStageOf, hrStageRole } from '@/lib/hrms/rbac'
 import { ROLES, isOversightOnly, PENDING_STATUSES } from '@/lib/hrms/constants'
 import { dayKey, parseKey } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey, cleanHhmm } from '@/lib/hrms/sanitize'
@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
         data: { userId: approverId, title: 'Attendance regularization request', body: `${requester.fullName} · ${date} — awaiting your approval.`, type: 'APPROVAL' },
       })
     } else {
-      const hrs = await db.user.findFirst({ where: { role: ROLES.HR_MANAGER, isActive: true }, select: { id: true } })
+      // an HR Manager's own request is routed to the System Admin, never to HR
+      const hrs = await db.user.findFirst({ where: { role: hrStageRole(requester), isActive: true }, select: { id: true } })
       if (hrs) await db.notification.create({ data: { userId: hrs.id, title: 'Attendance regularization routed to HR', body: `${requester.fullName} · ${date}.`, type: 'APPROVAL' } })
     }
 

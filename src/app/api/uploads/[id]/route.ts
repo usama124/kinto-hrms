@@ -26,6 +26,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
           'Content-Type': rec.mime,
           'Content-Disposition': `inline; filename="${rec.name.replace(/[^\w.\- ]/g, '_')}"`,
           'X-Content-Type-Options': 'nosniff',
+          // medical / identity documents: keep them out of shared caches and other origins
+          'Cache-Control': 'private, no-store',
+          'Cross-Origin-Resource-Policy': 'same-origin',
         },
       })
     } catch {

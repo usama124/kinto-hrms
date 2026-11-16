@@ -1,63 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { signSession, signMfaStageToken, verifyPassword } from '@/lib/auth'
+import { signMfaStageToken, verifyPassword, hashPassword } from '@/lib/auth'
 import { guard, fail, ok } from '@/lib/hrms/api-utils'
-import { guardRate, RATE_LIMITS } from '@/lib/hrms/rate-limit'
-import { issueRefreshToken, ACCESS_COOKIE, REFRESH_COOKIE, accessCookieOptions, refreshCookieOptions, newAccessJwt } from '@/lib/hrms/tokens'
+import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { cleanEmail } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { isMfaRequired } from '@/lib/hrms/constants'
+import { startSession } from '@/lib/hrms/session'
 
 const MAX_FAILED_ATTEMPTS = 5
 const LOCK_MINUTES = 15
+// One message for every failure (unknown email, wrong password, locked) so responses can't be used to
+// discover which accounts exist or which are locked.
+const BAD_LOGIN = `Invalid credentials. After ${MAX_FAILED_ATTEMPTS} failed attempts an account is locked for ${LOCK_MINUTES} minutes.`
+
+// Verified when the account is unknown/locked so every path costs one scrypt (no timing oracle).
+let dummyHash: string | null = null
+const burnPasswordCheck = (pw: string) => verifyPassword(pw, (dummyHash ??= hashPassword('dummy-password-for-timing')))
 
 export async function POST(req: NextRequest) {
   return guard(async () => {
+    const ip = clientIp(req)
     // Anti-DDoS: strict per-IP throttle on credentials endpoint (5 req/min)
     const rl = guardRate(req, 'login', RATE_LIMITS.AUTH.max, RATE_LIMITS.AUTH.windowMs)
     if (!rl.ok) {
-      await writeAudit({ entityType: 'SECURITY', action: undefined as never, meta: `Login rate-limited (${rl.retryAfterSec}s)` } as never)
+      await writeAudit({ entityType: 'SECURITY', reason: `Login rate-limited (${rl.retryAfterSec}s)`, ipAddress: ip })
       return fail(`Too many login attempts from this network. Retry after ${rl.retryAfterSec}s.`, 429, { retryAfterSec: rl.retryAfterSec })
     }
 
     const body = await req.json().catch(() => null)
     const email = cleanEmail(body?.email)
-    const password = String(body?.password ?? '')
+    const password = String(body?.password ?? '').slice(0, 256)
     if (!email || !password) return fail('Email and password are required.', 422)
 
     const user = await db.user.findUnique({ where: { email }, include: { department: true } })
-    if (!user || !user.isActive) return fail('Invalid credentials.', 401)
-
-    // Account lockout after 5 consecutive failures (15 minutes)
-    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-      const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000)
-      return fail(`Account locked after repeated failures. Try again in ${mins} minute(s).`, 423, { lockedUntil: user.lockedUntil })
+    const locked = !!user?.lockedUntil && user.lockedUntil.getTime() > Date.now()
+    if (!user || !user.isActive || locked) {
+      burnPasswordCheck(password)
+      return fail(BAD_LOGIN, 401)
     }
 
-    const valid = verifyPassword(password, user.passwordHash)
-    if (!valid) {
+    if (!verifyPassword(password, user.passwordHash)) {
       const attempts = user.failedAttempts + 1
-      const locked = attempts >= MAX_FAILED_ATTEMPTS
+      const lock = attempts >= MAX_FAILED_ATTEMPTS
       await db.user.update({
         where: { id: user.id },
-        data: locked ? { failedAttempts: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) } : { failedAttempts: attempts },
+        data: lock ? { failedAttempts: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) } : { failedAttempts: attempts },
       })
-      if (locked) {
+      if (lock) {
         await writeAudit({
           actorId: user.id, actorName: user.fullName, actorRole: user.role,
           entityType: 'SECURITY', entityId: user.id,
           fieldName: 'lockedUntil', newValue: new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString(),
-          reason: `${MAX_FAILED_ATTEMPTS} consecutive failed password attempts`, ipAddress: req.headers.get('x-forwarded-for') ?? null,
+          reason: `${MAX_FAILED_ATTEMPTS} consecutive failed password attempts`, ipAddress: ip,
         })
       }
-      const remaining = Math.max(0, MAX_FAILED_ATTEMPTS - attempts)
-      return fail(`Invalid credentials.${locked ? ' Account locked for 15 minutes.' : remaining <= 2 ? ` ${remaining} attempt(s) before lockout.` : ''}`, 401, { remainingAttempts: remaining })
+      return fail(BAD_LOGIN, 401)
     }
 
     await db.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } })
 
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-    const sessionPayload = { userId: user.id, email: user.email, fullName: user.fullName, role: user.role }
     const userDto = {
       id: user.id, email: user.email, fullName: user.fullName, role: user.role,
       employeeCode: user.employeeCode, designation: user.designation,
@@ -65,18 +67,16 @@ export async function POST(req: NextRequest) {
       mfaEnabled: user.mfaEnabled, mfaRequired: isMfaRequired(user.role),
     }
 
-    // TOTP MFA mandatory for elevated roles — if enrolled, require the second factor
+    // TOTP: if enrolled, the second factor is required before any session exists
     if (user.mfaEnabled) {
       const mfaToken = await signMfaStageToken(user.id)
       return ok({ mfaRequired: true, mfaToken, user: userDto })
     }
 
-    // Issue 15-min access JWT + rotating refresh family
-    const token = await signSession(sessionPayload)
-    const { refreshToken } = await issueRefreshToken(user.id, ip)
+    // Not enrolled: the session is issued, but for elevated roles requireSession() refuses every
+    // feature endpoint (403) until enrollment completes — enforced server-side, not just by the UI gate.
     const res = ok({ mfaRequired: false, user: userDto }) as NextResponse
-    res.cookies.set(ACCESS_COOKIE, token, accessCookieOptions)
-    res.cookies.set(REFRESH_COOKIE, refreshToken, refreshCookieOptions)
+    await startSession(res, user, ip)
     return res
   })
 }

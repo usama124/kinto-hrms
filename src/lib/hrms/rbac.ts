@@ -45,6 +45,11 @@ export async function canAccessUser(session: SessionPayload, targetId: string): 
   return visible.includes(targetId)
 }
 
+/** May this session read this person's compensation (salary components, bank details, payslips)? */
+export function canSeeCompensation(session: SessionPayload, targetId: string): boolean {
+  return session.userId === targetId || isOrgAdmin(session.role) || session.role === ROLES.ACCOUNTANT
+}
+
 // ─── Approval authority (approver-id based, hierarchy enforced) ───────────────
 
 type LeaveRequestLike = {
@@ -52,24 +57,55 @@ type LeaveRequestLike = {
   currentStage: string
   status: string
 }
-type UserLite = { id: string; teamLeadId: string | null; managerId: string | null }
+type UserLite = { id: string; teamLeadId: string | null; managerId: string | null; role?: string }
+type Level = 'TEAM_LEAD' | 'MANAGER' | 'HR' | 'ADMIN'
+
+/** Requests raised by an HR Manager or the System Admin skip the normal chain and are decided by the System Admin only. */
+export function isSysAdminOnlyRequester(role: string | undefined): boolean {
+  return role === ROLES.HR_MANAGER || role === ROLES.SUPER_ADMIN
+}
+
+/** Role that receives the "HR stage" notification: the System Admin for an HR Manager's own request. */
+export function hrStageRole(requester: { role?: string }): string {
+  return requester.role === ROLES.HR_MANAGER ? ROLES.SUPER_ADMIN : ROLES.HR_MANAGER
+}
+
+/**
+ * Rules that sit above the stage chain:
+ *  - an HR Manager's requests (leave + attendance) can only be approved/rejected by the System Admin —
+ *    never by the HR Manager themself and never by another HR Manager, team lead or manager;
+ *  - the System Admin's own requests are decided by the System Admin only;
+ *  - nobody else may act on their own request.
+ * Returns the decision, or null to continue with the normal chain.
+ */
+function overrideGate(session: SessionPayload, requester: { id: string; role: string }): { allowed: boolean; level?: Level } | null {
+  if (isSysAdminOnlyRequester(requester.role)) {
+    return session.role === ROLES.SUPER_ADMIN ? { allowed: true, level: 'ADMIN' } : { allowed: false }
+  }
+  if (requester.id === session.userId) return { allowed: false }
+  return null
+}
 
 /**
  * Who may act at a given stage on a leave request.
- * Chain: TEAM_LEAD -> MANAGER (-> HR fallback). Org Admins fast-track finalize any stage.
+ * Chain: TEAM_LEAD -> MANAGER (-> HR fallback). Org Admins fast-track finalize any stage
+ * (except on their own request / an HR Manager's request — see overrideGate).
  */
 export async function canApproveLeaveAtStage(
   session: SessionPayload,
   request: LeaveRequestLike,
-): Promise<{ allowed: boolean; level?: 'TEAM_LEAD' | 'MANAGER' | 'HR' | 'ADMIN' }> {
+): Promise<{ allowed: boolean; level?: Level }> {
   if (request.status !== 'PENDING_TEAM_LEAD' && request.status !== 'PENDING_MANAGER' && request.status !== 'PENDING_HR') {
     return { allowed: false }
   }
-  // Admin Fast-Track: single-step finalize from any stage
-  if (isOrgAdmin(session.role)) return { allowed: true, level: 'ADMIN' }
-
   const requester = await db.user.findUnique({ where: { id: request.userId } })
   if (!requester) return { allowed: false }
+
+  const override = overrideGate(session, requester)
+  if (override) return override
+
+  // Admin Fast-Track: single-step finalize from any stage
+  if (isOrgAdmin(session.role)) return { allowed: true, level: 'ADMIN' }
 
   const stage = request.currentStage
   if (stage === 'TEAM_LEAD') {
@@ -79,8 +115,6 @@ export async function canApproveLeaveAtStage(
   }
   if (stage === 'MANAGER') {
     if (session.userId === requester.managerId) return { allowed: true, level: 'MANAGER' }
-    // No manager assigned → HR acts as the fallback final approver
-    if (!requester.managerId && session.role === ROLES.HR_MANAGER) return { allowed: true, level: 'HR' }
     return { allowed: false }
   }
   if (stage === 'HR') {
@@ -92,17 +126,21 @@ export async function canApproveLeaveAtStage(
 
 /**
  * Who may act at a given stage on an attendance regularization request.
- * 3-tier chain: TEAM_LEAD -> MANAGER -> HR. Org Admins fast-track finalize any stage.
+ * 3-tier chain: TEAM_LEAD -> MANAGER -> HR. Org Admins fast-track finalize any stage
+ * (same exceptions as leave — see overrideGate).
  */
 export async function canApproveAttendanceAtStage(
   session: SessionPayload,
   request: LeaveRequestLike,
-): Promise<{ allowed: boolean; level?: 'TEAM_LEAD' | 'MANAGER' | 'HR' | 'ADMIN' }> {
+): Promise<{ allowed: boolean; level?: Level }> {
   if (!['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR'].includes(request.status)) return { allowed: false }
-  if (isOrgAdmin(session.role)) return { allowed: true, level: 'ADMIN' }
-
   const requester = await db.user.findUnique({ where: { id: request.userId } })
   if (!requester) return { allowed: false }
+
+  const override = overrideGate(session, requester)
+  if (override) return override
+
+  if (isOrgAdmin(session.role)) return { allowed: true, level: 'ADMIN' }
 
   const stage = request.currentStage
   if (stage === 'TEAM_LEAD') {
@@ -122,6 +160,9 @@ export async function canApproveAttendanceAtStage(
 
 /** Resolve the next pending stage + approver ids for notifications. */
 export function nextStageOf(kind: 'LEAVE' | 'ATTENDANCE', requester: UserLite, currentStage: string | null): { status: string; stage: string } | null {
+  // HR Manager / System Admin requests have a single stage: decided by the System Admin
+  if (isSysAdminOnlyRequester(requester.role)) return currentStage == null ? { status: 'PENDING_HR', stage: 'HR' } : null
+
   const chainLeave = ['TEAM_LEAD', 'MANAGER', 'HR']
   const chainAtt = ['TEAM_LEAD', 'MANAGER', 'HR']
   const chain = kind === 'LEAVE' ? chainLeave : chainAtt

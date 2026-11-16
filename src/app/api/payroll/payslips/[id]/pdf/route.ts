@@ -1,9 +1,8 @@
 import { db } from '@/lib/db'
 import { requireSession, guard, fail } from '@/lib/hrms/api-utils'
-import { visibleUserIds } from '@/lib/hrms/rbac'
 import { payslipSlipPDF } from '@/lib/hrms/pdf-payslip'
 import { monthLabel, fmtDateKey } from '@/lib/hrms/dates'
-import { ROLES, isPayrollOperator, isOrgAdmin } from '@/lib/hrms/constants'
+import { isPayrollOperator, isOrgAdmin } from '@/lib/hrms/constants'
 
 /** Detailed salary slip PDF — owner, Accountant or org Admin only. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -16,11 +15,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     })
     if (!p) return fail('Payslip not found.', 404)
 
-    const allowed = p.userId === session.userId || isPayrollOperator(session.role) || isOrgAdmin(session.role)
-    if (!allowed) {
-      const visible = await visibleUserIds(session)
-      if (!visible.includes(p.userId)) return fail('Forbidden: you cannot download this payslip.', 403)
-    }
+    // owner, payroll operators and HR/Admin only (no supervisor access); owners get finalized slips only
+    const privileged = isPayrollOperator(session.role) || isOrgAdmin(session.role)
+    if (!privileged && p.userId !== session.userId) return fail('Forbidden: you cannot download this payslip.', 403)
+    if (!privileged && p.run.status !== 'FINALIZED') return fail('This payslip is not finalized yet.', 403)
 
     const companyRow = await db.setting.findUnique({ where: { key: 'company.profile' } })
     const company = companyRow ? JSON.parse(companyRow.value) : { name: 'KINTO HRMS', address: 'Karachi, Pakistan' }

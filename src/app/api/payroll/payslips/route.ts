@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { visibleUserIds } from '@/lib/hrms/rbac'
-import { ROLES, isPayrollOperator, isOrgAdmin } from '@/lib/hrms/constants'
+import { isPayrollOperator, isOrgAdmin } from '@/lib/hrms/constants'
 
 /** Payslip list — Employee: own only; Admin/Accountant: all; Manager/TL: scoped hierarchy. */
 export async function GET(req: NextRequest) {
@@ -12,23 +11,23 @@ export async function GET(req: NextRequest) {
     const userId = qp.get('userId')
     const month = qp.get('month')
 
+    // Compensation is private: the owner, payroll operators and HR/Admin only. A team lead / manager
+    // does NOT get their reports' payslips just because those people are in their hierarchy scope.
+    const privileged = isPayrollOperator(session.role) || isOrgAdmin(session.role)
     let target: string[] | null = null
     if (userId) {
-      const allowed =
-        userId === session.userId ||
-        isPayrollOperator(session.role) ||
-        isOrgAdmin(session.role) ||
-        (await visibleUserIds(session)).includes(userId)
-      if (!allowed) return fail('Forbidden: you cannot view this employee’s payslips.', 403)
+      if (userId !== session.userId && !privileged) return fail('Forbidden: you cannot view this employee’s payslips.', 403)
       target = [userId]
-    } else if (!isPayrollOperator(session.role) && !isOrgAdmin(session.role)) {
-      target = await visibleUserIds(session)
+    } else if (!privileged) {
+      target = [session.userId]
     }
+    if (month !== null && !/^\d{4}-\d{2}$/.test(month)) return fail('month must be YYYY-MM.', 422)
 
     const slips = await db.payslip.findMany({
       where: {
         ...(target ? { userId: { in: target } } : {}),
-        ...(month ? { run: { month } } : {}),
+        // employees only ever see finalized slips; drafts are for the payroll team
+        run: { ...(month ? { month } : {}), ...(privileged ? {} : { status: 'FINALIZED' }) },
       },
       include: {
         user: { select: { id: true, fullName: true, employeeCode: true, designation: true, avatarColor: true, department: { select: { name: true } } } },

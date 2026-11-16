@@ -57,8 +57,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         gender: u.gender, maritalStatus: u.maritalStatus, bloodGroup: u.bloodGroup,
         religion: u.religion, nationality: u.nationality,
         // identity documents
-        cnic: u.cnic, cnicExpiry: u.cnicExpiry,
-        drivingLicense: u.drivingLicense, passportNo: u.passportNo, passportExpiry: u.passportExpiry,
+        // government IDs: owner and HR/Admin only — a team lead/manager scoping this profile does not need them
+        ...((session.userId === id || isOrgAdmin(session.role)) ? {
+          cnic: u.cnic, cnicExpiry: u.cnicExpiry,
+          drivingLicense: u.drivingLicense, passportNo: u.passportNo, passportExpiry: u.passportExpiry,
+        } : { cnic: null, cnicExpiry: null, drivingLicense: null, passportNo: null, passportExpiry: null }),
         // contact
         phone: u.phone, personalEmail: u.personalEmail,
         emergencyContactName: u.emergencyContactName, emergencyContactPhone: u.emergencyContactPhone,
@@ -102,6 +105,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!u) return fail('Employee not found.', 404)
     if (u.role === ROLES.SUPER_ADMIN && session.role !== ROLES.SUPER_ADMIN) {
       return fail('Forbidden: only the System Admin can edit another System Admin.', 403)
+    }
+    // HR Manager records (own profile included) can only be changed by the System Admin — an HR Manager
+    // must not be able to raise their own salary/role or tamper with a colleague's record
+    if (u.role === ROLES.HR_MANAGER && session.role !== ROLES.SUPER_ADMIN) {
+      return fail('Forbidden: only the System Admin can edit an HR Manager profile.', 403)
     }
 
     const body = await req.json().catch(() => null)
@@ -200,7 +208,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         next[f] = Number.isFinite(n) ? Math.max(0, n) : 0
       }
     }
-    if (body.isActive !== undefined) next.isActive = Boolean(body.isActive)
+    if (body.isActive !== undefined) {
+      next.isActive = Boolean(body.isActive)
+      if (id === session.userId && !next.isActive) return fail('You cannot deactivate your own account.', 422)
+    }
 
     // nothing to change?
     if (Object.keys(next).length === 0) return fail('No changes provided.', 422)
@@ -218,8 +229,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       reason: reason ?? 'Employee profile updated', ipAddress: req.headers.get('x-forwarded-for') ?? null,
     }, changes)
 
-    // deactivating → revoke every session of that employee immediately
-    if (next.isActive === false && u.isActive) await revokeAllForUser(u.id)
+    // deactivating or changing role/e-mail → revoke every session of that employee immediately
+    if ((next.isActive === false && u.isActive) || (next.role && next.role !== u.role) || (next.email && next.email !== u.email)) {
+      await revokeAllForUser(u.id)
+    }
 
     return ok({
       employee: { id: updated.id, fullName: updated.fullName, employeeCode: updated.employeeCode, role: updated.role, isActive: updated.isActive },

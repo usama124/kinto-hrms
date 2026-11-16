@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { visibleUserIds, initialStageOf } from '@/lib/hrms/rbac'
+import { requireSession, guard, ok, fail, HttpError } from '@/lib/hrms/api-utils'
+import { visibleUserIds, initialStageOf, hrStageRole } from '@/lib/hrms/rbac'
 import { validateRequest } from '@/lib/hrms/policy'
 import { ROLES, REQUEST_TYPES, isOversightOnly, PENDING_STATUSES } from '@/lib/hrms/constants'
 import { dateTimeFor } from '@/lib/hrms/dates'
@@ -84,35 +84,47 @@ export async function POST(req: NextRequest) {
     // Chain-aware initial stage: TL → Manager → HR fallback
     const first = initialStageOf('LEAVE', requester)
 
-    const created = await db.request.create({
-      data: {
-        userId: targetUserId,
-        type: input.type,
-        leaveTypeId: input.leaveTypeId,
-        startDate: dateTimeFor(input.startDate, '00:00'),
-        endDate: dateTimeFor(input.endDate, '00:00'),
-        isShortLeave: input.isShortLeave,
-        shortHours: input.shortHours,
-        dayCount: result.dayCount,
-        reason: cleanText(body.reason, 500) || '—',
-        attachmentId: input.attachmentId,
-        status: first.status,
-        currentStage: first.stage,
-      },
-      include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true } },
-        leaveType: { select: { id: true, name: true, colorCode: true } },
-      },
-    })
-
-    // pending balance reservation for leave requests
-    if (input.type === 'LEAVE' && input.leaveTypeId) {
-      const year = Number(input.startDate.slice(0, 4))
-      const bal = await db.leaveBalance.findUnique({
-        where: { userId_leaveTypeId_year: { userId: targetUserId, leaveTypeId: input.leaveTypeId, year } },
-      })
-      if (bal) await db.leaveBalance.update({ where: { id: bal.id }, data: { pending: { increment: result.dayCount } } })
+    // an attachment must be the requester's own upload (can't attach somebody else's document by id)
+    if (input.attachmentId) {
+      const up = await db.upload.findUnique({ where: { id: input.attachmentId }, select: { uploadedById: true } })
+      if (!up || (up.uploadedById !== targetUserId && up.uploadedById !== session.userId)) return fail('Attachment not found.', 422)
     }
+
+    // create + reserve the balance atomically; the re-check inside the transaction closes the
+    // "two simultaneous requests both pass validation" overdraw race (row lock serialises the increments)
+    const created = await db.$transaction(async (tx) => {
+      const c = await tx.request.create({
+        data: {
+          userId: targetUserId,
+          type: input.type,
+          leaveTypeId: input.leaveTypeId,
+          startDate: dateTimeFor(input.startDate, '00:00'),
+          endDate: dateTimeFor(input.endDate, '00:00'),
+          isShortLeave: input.isShortLeave,
+          shortHours: input.shortHours,
+          dayCount: result.dayCount,
+          reason: cleanText(body.reason, 500) || '—',
+          attachmentId: input.attachmentId,
+          status: first.status,
+          currentStage: first.stage,
+        },
+        include: {
+          user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true } },
+          leaveType: { select: { id: true, name: true, colorCode: true } },
+        },
+      })
+      if (input.type === 'LEAVE' && input.leaveTypeId) {
+        const where = { userId: targetUserId, leaveTypeId: input.leaveTypeId, year: Number(input.startDate.slice(0, 4)) }
+        const upd = await tx.leaveBalance.updateMany({ where, data: { pending: { increment: result.dayCount } } })
+        if (upd.count) {
+          const b = await tx.leaveBalance.findFirst({ where, include: { leaveType: true } })
+          if (b && b.carryForward + b.leaveType.annualQuota - b.availed - b.pending - b.lapsed < -0.0001) {
+            throw new HttpError(422, 'Insufficient leave balance for this request.')
+          }
+        }
+      }
+      return c
+    })
 
     // notify the correct first approver
     const approverId = first.stage === 'TEAM_LEAD' ? requester.teamLeadId : first.stage === 'MANAGER' ? requester.managerId : null
@@ -121,7 +133,8 @@ export async function POST(req: NextRequest) {
         data: { userId: approverId, title: `New ${input.isShortLeave ? 'short leave' : typeLabel(input.type)} request`, body: `${requester.fullName} · ${result.dayCount} day(s) — awaiting your approval.`, type: 'APPROVAL' },
       })
     } else {
-      const hrs = await db.user.findFirst({ where: { role: ROLES.HR_MANAGER, isActive: true }, select: { id: true } })
+      // HR stage: an HR Manager's own request is routed to the System Admin, never to HR
+      const hrs = await db.user.findFirst({ where: { role: hrStageRole(requester), isActive: true }, select: { id: true } })
       if (hrs) {
         await db.notification.create({
           data: { userId: hrs.id, title: `New ${typeLabel(input.type)} request routed to HR`, body: `${requester.fullName} · ${result.dayCount} day(s) — no reporting line assigned.`, type: 'APPROVAL' },

@@ -1,17 +1,10 @@
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+	# SECURITY: the former `?XTransformPort=<n>` handler let any client choose which localhost port to
+	# reverse-proxy to (an SSRF / internal-service pivot). It was removed — mini-services/ is empty.
+	# If a sidecar service is ever needed, add an explicit `handle /its-path/*` to ONE fixed port instead.
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
-
+	# Strip anything a client sent so the app only ever sees the values Caddy sets below
+	# (the app's rate-limiter / audit log trust X-Real-IP; the app must NOT be reachable except through this proxy).
 	handle {
 		reverse_proxy localhost:3000 {
 			header_up Host {host}

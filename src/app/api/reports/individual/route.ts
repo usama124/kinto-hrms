@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { canAccessUser } from '@/lib/hrms/rbac'
+import { canAccessUser, canSeeCompensation } from '@/lib/hrms/rbac'
+import { cleanDateKey } from '@/lib/hrms/sanitize'
 import { ROLES } from '@/lib/hrms/constants'
 import { addDaysKey, todayKey } from '@/lib/hrms/dates'
 
@@ -14,13 +15,15 @@ export async function GET(req: NextRequest) {
     const session = await requireSession()
     const qp = req.nextUrl.searchParams
     const userId = qp.get('userId') ?? session.userId
-    const to = qp.get('to') ?? todayKey()
-    const from = qp.get('from') ?? addDaysKey(to, -89)
+    const to = qp.get('to') ? cleanDateKey(qp.get('to')) : todayKey()
+    const from = qp.get('from') ? cleanDateKey(qp.get('from')) : (to ? addDaysKey(to, -89) : null)
+    if (!from || !to) return fail('from / to must be valid YYYY-MM-DD dates.', 422)
 
     if (!(await canAccessUser(session, userId))) return fail('Forbidden: you cannot view this employee’s report.', 403)
 
     const accountant = session.role === ROLES.ACCOUNTANT
-    const sections = accountant ? ['payroll'] : ['attendance', 'leaves', 'payroll']
+    // payroll section = compensation: owner / HR-Admin / accountant only (a supervisor gets attendance + leave)
+    const sections = accountant ? ['payroll'] : canSeeCompensation(session, userId) ? ['attendance', 'leaves', 'payroll'] : ['attendance', 'leaves']
 
     const u = await db.user.findUnique({
       where: { id: userId },
@@ -87,11 +90,11 @@ export async function GET(req: NextRequest) {
     }
 
     // ── payroll history ────────────────────────────────────────────────────────
-    const payslips = await db.payslip.findMany({
+    const payslips = sections.includes('payroll') ? await db.payslip.findMany({
       where: { userId, run: { status: 'FINALIZED', month: { gte: from.slice(0, 7), lte: to.slice(0, 7) } } },
       include: { run: { select: { month: true } } },
       orderBy: { run: { month: 'desc' } },
-    })
+    }) : []
     const payroll = payslips.map((p) => ({
       id: p.id, month: p.run.month, grossPay: p.grossPay, shortMinutes: p.shortMinutes,
       leaveDaysEquivalent: p.leaveDaysEquivalent, shortConvertedFromBalance: p.shortConvertedFromBalance,

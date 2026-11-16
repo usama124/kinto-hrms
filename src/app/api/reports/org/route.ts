@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
+import { cleanDateKey } from '@/lib/hrms/sanitize'
 import { ROLES, isOrgAdmin } from '@/lib/hrms/constants'
 import { addDaysKey, todayKey, monthsBetween, monthRangeKeys } from '@/lib/hrms/dates'
 
@@ -16,8 +17,9 @@ export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
     const qp = req.nextUrl.searchParams
-    const to = qp.get('to') ?? todayKey()
-    const from = qp.get('from') ?? addDaysKey(to, -90)
+    const to = qp.get('to') ? cleanDateKey(qp.get('to')) : todayKey()
+    const from = qp.get('from') ? cleanDateKey(qp.get('from')) : (to ? addDaysKey(to, -90) : null)
+    if (!from || !to) return fail('from / to must be valid YYYY-MM-DD dates.', 422)
     const departmentId = qp.get('departmentId')
 
     const accountant = session.role === ROLES.ACCOUNTANT

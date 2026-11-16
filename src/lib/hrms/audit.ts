@@ -37,7 +37,8 @@ export async function writeAudit(entry: AuditEntry): Promise<void> {
       oldValue: entry.oldValue != null ? String(entry.oldValue).slice(0, 2000) : null,
       newValue: entry.newValue != null ? String(entry.newValue).slice(0, 2000) : null,
       reason: entry.reason ?? null,
-      ipAddress: entry.ipAddress ?? null,
+      // callers still pass raw x-forwarded-for; keep only a sane single address
+      ipAddress: entry.ipAddress ? (entry.ipAddress.split(',').pop()!.trim().match(/^[0-9a-fA-F:.]{3,45}$/)?.[0] ?? 'unknown') : null,
       meta: entry.meta ?? null,
     },
   })

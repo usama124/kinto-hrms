@@ -5,12 +5,13 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin, ROLES } from '@/lib/hrms/constants'
 import { cleanText, cleanEmail, cleanNumber, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
-import { visibleUserIds } from '@/lib/hrms/rbac'
+import { visibleUserIds, canSeeCompensation } from '@/lib/hrms/rbac'
+import { passwordPolicyError, generateTempPassword } from '@/lib/hrms/password'
+import { clientIp } from '@/lib/hrms/rate-limit'
 import { todayKey } from '@/lib/hrms/dates'
 
 const CREATABLE_BY_HR = [ROLES.EMPLOYEE, ROLES.TEAM_LEAD, ROLES.MANAGER, ROLES.ACCOUNTANT]
 const CREATABLE_BY_ADMIN = [...CREATABLE_BY_HR, ROLES.HR_MANAGER]
-export const DEFAULT_PASSWORD = 'NovaTech@123'
 
 /**
  * GET /api/employees — people directory, RBAC-scoped (repo-level query scoping).
@@ -36,8 +37,9 @@ export async function GET() {
         departmentName: u.department?.name ?? '—', departmentId: u.departmentId,
         joiningDate: u.joiningDate, avatarColor: u.avatarColor,
         teamLead: u.teamLead?.fullName ?? null, manager: u.manager?.fullName ?? null,
-        shiftName: u.shift?.name ?? null, baseSalary: u.baseSalary,
-        allowances: u.hrAllowance + u.utilityAllowance,
+        shiftName: u.shift?.name ?? null,
+        // compensation only for the owner, HR/Admin and the accountant — never for a supervisor browsing their team
+        ...(canSeeCompensation(session, u.id) ? { baseSalary: u.baseSalary, allowances: u.hrAllowance + u.utilityAllowance } : {}),
         isActive: u.isActive,
       })),
     })
@@ -98,7 +100,13 @@ export async function POST(req: NextRequest) {
     if (shiftId && !(await db.shift.findUnique({ where: { id: shiftId } }))) return fail('Shift not found.', 422)
 
     const dob = cleanDateKey(body.dateOfBirth)
-    const password = typeof body.password === 'string' && body.password.length >= 8 ? body.password : DEFAULT_PASSWORD
+    // no shared default password any more: an explicit password must meet the policy, otherwise a random one is generated
+    const supplied = typeof body.password === 'string' && body.password.length > 0 ? body.password : null
+    if (supplied) {
+      const problem = passwordPolicyError(supplied)
+      if (problem) return fail(problem, 422)
+    }
+    const password = supplied ?? generateTempPassword()
 
     const u = await db.user.create({
       data: {
@@ -155,13 +163,13 @@ export async function POST(req: NextRequest) {
       targetUserId: u.id, targetName: u.fullName,
       entityType: 'USER', entityId: u.id, fieldName: 'employee.created',
       newValue: `${u.fullName} (${u.employeeCode}) · ${role}`,
-      reason: 'Employee onboarded', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason: 'Employee onboarded', ipAddress: clientIp(req),
     })
 
     return ok({
       employee: { id: u.id, fullName: u.fullName, email: u.email, employeeCode: u.employeeCode, role: u.role },
       temporaryPassword: password,
-    }, { status: 201 })
+    }, { status: 201, headers: { 'Cache-Control': 'no-store' } })
   })
 }
 

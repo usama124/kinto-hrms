@@ -18,6 +18,10 @@ export async function POST(req: NextRequest) {
 
     const target = await db.user.findUnique({ where: { id: userId } })
     if (!target || target.role === 'SUPER_ADMIN') return fail('Employee not found.', 404)
+    if (target.id === session.userId) return fail('Forbidden: you cannot award yourself a bonus or arrears.', 403)
+    // a finalized month is locked: adjustments would silently never be paid
+    const lockedRun = await db.payrollRun.findUnique({ where: { month }, select: { status: true } })
+    if (lockedRun?.status === 'FINALIZED') return fail('This month is finalized — adjustments are locked.', 409)
 
     const bonus = Math.max(0, cleanNumber(body?.bonus, 0))
     const arrears = Math.max(0, cleanNumber(body?.arrears, 0))

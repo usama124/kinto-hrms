@@ -15,6 +15,10 @@ import { writeAudit } from '@/lib/hrms/audit'
  */
 export async function POST(req: NextRequest) {
   return guard(async () => {
+    // demo-only: it fabricates attendance for every employee, so it is OFF in production unless explicitly enabled
+    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_BIOMETRIC_SIMULATOR !== 'true') {
+      return fail('The biometric simulator is disabled in production.', 403)
+    }
     const session = await requireSession()
     if (!isOrgAdmin(session.role)) return fail('Forbidden.', 403)
 

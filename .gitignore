@@ -57,3 +57,10 @@ server.log
 # Browser regression artifacts
 /playwright-report/
 /test-results/
+
+# Sensitive runtime data — never commit (employee uploads, database files, env files)
+/uploads/
+*.db
+*.db-journal
+.env.*
+!.env.example

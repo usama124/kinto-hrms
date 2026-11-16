@@ -21,7 +21,11 @@ export async function POST(req: NextRequest) {
     const rl = guardRate(req, 'upload', RATE_LIMITS.UPLOAD.max, RATE_LIMITS.UPLOAD.windowMs)
     if (!rl.ok) return fail(`Too many uploads. Retry after ${rl.retryAfterSec}s.`, 429)
 
-    const form = await req.formData().catch(() => null)
+    // Enforce the size cap while STREAMING the body: Content-Length can be absent/forged (chunked), and
+    // req.formData() would otherwise buffer an arbitrarily large body before any size check ran.
+    const buffered = await readCapped(req, MAX_UPLOAD_BYTES + 64 * 1024) // + multipart framing overhead
+    if (!buffered) return fail('File exceeds the 5 MB limit.', 413)
+    const form = await new Response(new Uint8Array(buffered), { headers: { 'content-type': req.headers.get('content-type') ?? '' } }).formData().catch(() => null)
     if (!form) return fail('multipart/form-data required.', 422)
     const file = form.get('file')
     if (!(file instanceof File)) return fail('file field required.', 422)
@@ -50,6 +54,21 @@ export async function POST(req: NextRequest) {
     })
     return ok({ upload: { id: rec.id, name: rec.name, mime: rec.mime, size: rec.size } }, { status: 201 })
   })
+}
+
+async function readCapped(req: NextRequest, max: number): Promise<Buffer | null> {
+  const reader = req.body?.getReader()
+  if (!reader) return Buffer.alloc(0)
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.length
+    if (total > max) { await reader.cancel(); return null }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
 }
 
 function sniffMime(b: Buffer): string | null {

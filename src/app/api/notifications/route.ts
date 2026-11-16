@@ -20,7 +20,8 @@ export async function POST(req: NextRequest) {
     if (body?.all) {
       await db.notification.updateMany({ where: { userId: session.userId, read: false }, data: { read: true } })
     } else if (Array.isArray(body?.ids) && body.ids.length) {
-      await db.notification.updateMany({ where: { id: { in: body.ids }, userId: session.userId }, data: { read: true } })
+      const ids = (body.ids as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 200)
+      if (ids.length) await db.notification.updateMany({ where: { id: { in: ids }, userId: session.userId }, data: { read: true } })
     }
     const unread = await db.notification.count({ where: { userId: session.userId, read: false } })
     return ok({ ok: true, unread })

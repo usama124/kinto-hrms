@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
     const qp = req.nextUrl.searchParams
     const entityType = qp.get('entityType')
     const targetUserId = qp.get('targetUserId')
-    const take = Math.min(Number(qp.get('take') ?? 100), 300)
+    const takeRaw = Number(qp.get('take'))
+    const take = Number.isInteger(takeRaw) && takeRaw > 0 ? Math.min(takeRaw, 300) : 100 // NaN / negatives used to reach Prisma and 500
 
     const rows = await db.auditLog.findMany({
       where: {

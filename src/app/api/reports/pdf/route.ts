@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, fail } from '@/lib/hrms/api-utils'
-import { canAccessUser, visibleUserIds } from '@/lib/hrms/rbac'
+import { canAccessUser, canSeeCompensation, visibleUserIds } from '@/lib/hrms/rbac'
+import { cleanDateKey } from '@/lib/hrms/sanitize'
 import { ROLES, isOrgAdmin } from '@/lib/hrms/constants'
 import { addDaysKey, todayKey, monthRangeKeys, monthsBetween, fmtDateKey, fmtMinutes } from '@/lib/hrms/dates'
 import { individualReportPDF, orgAttendancePDF, leaveAuditPDF } from '@/lib/hrms/pdf'
@@ -21,8 +22,10 @@ export async function GET(req: NextRequest) {
     const session = await requireSession()
     const qp = req.nextUrl.searchParams
     const type = qp.get('type') ?? 'individual'
-    const to = qp.get('to') ?? todayKey()
-    const from = qp.get('from') ?? addDaysKey(to, -89)
+    // validated: these go into SQL filters AND the Content-Disposition filename
+    const to = qp.get('to') ? cleanDateKey(qp.get('to')) : todayKey()
+    const from = qp.get('from') ? cleanDateKey(qp.get('from')) : (to ? addDaysKey(to, -89) : null)
+    if (!from || !to) return fail('from / to must be valid YYYY-MM-DD dates.', 422)
     const rangeLabel = `${fmtDateKey(from)} → ${fmtDateKey(to)}`
 
     if (type === 'individual') {
@@ -42,10 +45,11 @@ export async function GET(req: NextRequest) {
       const score = sched.length ? Math.round((attended.length / sched.length) * 100) : 0
 
       const balances = await db.leaveBalance.findMany({ where: { userId, year }, include: { leaveType: true }, orderBy: { leaveTypeId: 'asc' } })
-      const payslips = await db.payslip.findMany({
+      // compensation is not part of a supervisor's view of someone else's report
+      const payslips = canSeeCompensation(session, userId) ? await db.payslip.findMany({
         where: { userId, run: { status: 'FINALIZED', month: { gte: from.slice(0, 7), lte: to.slice(0, 7) } } },
         include: { run: true }, orderBy: { run: { month: 'desc' } },
-      })
+      }) : []
 
       const buf = individualReportPDF({
         employee: {

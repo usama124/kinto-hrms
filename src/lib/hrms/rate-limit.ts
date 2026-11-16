@@ -36,13 +36,17 @@ export function rateLimit(key: string, max: number, windowMs: number): RateResul
   return { ok: true }
 }
 
+/**
+ * Client IP as seen by the reverse proxy. Uses the RIGHT-most X-Forwarded-For entry (the one our own
+ * proxy appended — a client can only forge entries to its left) and validates the shape, so a forged
+ * header can neither dodge the throttles nor inject junk into audit rows.
+ * The app must only be reachable through the trusted proxy (Caddy); bind it to localhost otherwise.
+ */
 export function clientIp(req: Request): string {
   const h = req.headers
-  return (
-    h.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    h.get('x-real-ip') ||
-    '127.0.0.1'
-  )
+  const xff = h.get('x-forwarded-for')?.split(',').map((s) => s.trim()).filter(Boolean)
+  const ip = h.get('x-real-ip')?.trim() || xff?.[xff.length - 1] || ''
+  return /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? ip : 'unknown'
 }
 
 /** Route-aware limit helper. Throws a sentinel via return value (never throws). */

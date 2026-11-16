@@ -3,11 +3,12 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { guard, fail, ok } from '@/lib/hrms/api-utils'
 import { generateTotpSecret, otpauthUri, generateBackupCodes } from '@/lib/hrms/totp'
+import { encryptSecret } from '@/lib/hrms/secrets'
 import QRCode from 'qrcode'
-import { guardRate, RATE_LIMITS } from '@/lib/hrms/rate-limit'
+import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { writeAudit } from '@/lib/hrms/audit'
 
-/** Begin TOTP enrollment: provision secret + QR + one-time backup codes. */
+/** Begin TOTP enrollment: provision secret + QR + one-time backup codes. (Allowed while MFA enrollment is still pending.) */
 export async function POST(req: NextRequest) {
   return guard(async () => {
     const session = await getSession()
@@ -23,17 +24,17 @@ export async function POST(req: NextRequest) {
     const { plain, hashes } = generateBackupCodes(8)
     await db.user.update({
       where: { id: user.id },
-      data: { mfaSecret: secret, backupCodes: JSON.stringify(hashes) },
+      data: { mfaSecret: encryptSecret(secret), backupCodes: JSON.stringify(hashes) }, // secret is encrypted at rest
     })
 
     const uri = otpauthUri(user.email, secret)
     const qrDataUrl = await QRCode.toDataURL(uri, { width: 220, margin: 1 })
     await writeAudit({
       actorId: user.id, actorName: user.fullName, actorRole: user.role,
-      entityType: 'MFA', entityId: user.id, reason: 'TOTP enrollment started', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      entityType: 'MFA', entityId: user.id, reason: 'TOTP enrollment started', ipAddress: clientIp(req),
     })
 
-    return ok({ secret, otpauthUri: uri, qrDataUrl, backupCodes: plain })
+    return ok({ secret, otpauthUri: uri, qrDataUrl, backupCodes: plain }, { headers: { 'Cache-Control': 'no-store' } })
   })
 }
 

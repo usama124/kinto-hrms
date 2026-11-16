@@ -14,9 +14,19 @@ export type PayrollConfig = {
 }
 
 export async function getPayrollConfig(): Promise<PayrollConfig> {
+  const fallback: PayrollConfig = { pfRate: 0.05, eoobiAmount: 500, eoobiThreshold: 26000, taxSlabs: [{ upto: null, rate: 0 }] }
   const row = await db.setting.findUnique({ where: { key: 'payroll.config' } })
-  if (!row) return { pfRate: 0.05, eoobiAmount: 500, eoobiThreshold: 26000, taxSlabs: [{ upto: null, rate: 0 }] }
-  return JSON.parse(row.value) as PayrollConfig
+  if (!row) return fallback
+  try {
+    const c = JSON.parse(row.value) as PayrollConfig
+    // a malformed stored config must fail loudly here, not silently mis-pay everyone
+    if (!Number.isFinite(c.pfRate) || !Number.isFinite(c.eoobiAmount) || !Number.isFinite(c.eoobiThreshold) || !Array.isArray(c.taxSlabs) || !c.taxSlabs.length) {
+      throw new Error('invalid shape')
+    }
+    return c
+  } catch {
+    throw new Error('payroll.config setting is malformed — fix it in Settings before running payroll.')
+  }
 }
 
 export function monthlyTaxFromSlabs(taxable: number, slabs: PayrollConfig['taxSlabs']): number {

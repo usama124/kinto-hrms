@@ -96,7 +96,7 @@ function MyPayslips({ user }: { user: SessionUser }) {
       <div>
         <h1 className="text-lg md:text-xl font-bold text-slate-800">My Payslips</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          {isEmployee ? 'Your finalized monthly salary slips.' : 'Finalized payslips for the employees in your scope.'}
+          {isEmployee ? 'Your finalized monthly salary slips.' : 'Finalized payslips.'}
         </p>
       </div>
 

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { isOrgAdmin } from '@/lib/hrms/constants'
+import { isOrgAdmin, ROLES, ATT_STATUS } from '@/lib/hrms/constants'
 import { cleanHhmm, cleanText } from '@/lib/hrms/sanitize'
 import { resolveShiftForUser, computeFromPunches, holidayKeysFor } from '@/lib/hrms/attendance-engine'
 import { dayKey, dateTimeFor } from '@/lib/hrms/dates'
@@ -20,6 +20,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const { id } = await ctx.params
     const log = await db.attendanceLog.findUnique({ where: { id }, include: { user: true } })
     if (!log) return fail('Attendance record not found.', 404)
+    // same rule as requests: an HR Manager's attendance (own or a colleague's) is corrected by the System Admin only
+    if (log.user.role === ROLES.HR_MANAGER && session.role !== ROLES.SUPER_ADMIN) {
+      return fail('Forbidden: only the System Admin can adjust an HR Manager’s attendance.', 403)
+    }
 
     const body = await req.json().catch(() => null)
     const reason = cleanText(body?.reason, 300)
@@ -38,7 +42,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (punches.length === 0) return fail('At least one of checkIn/checkOut is required.', 422)
 
     const computed = computeFromPunches(dateKey, punches, shift, holidays)
-    const overrideStatus = cleanText(body?.status, 30) || computed.status
+    const requestedStatus = cleanText(body?.status, 30)
+    if (requestedStatus && !(Object.values(ATT_STATUS) as string[]).includes(requestedStatus)) return fail('Unknown attendance status.', 422)
+    const overrideStatus = requestedStatus || computed.status
 
     const updated = await db.attendanceLog.update({
       where: { id },

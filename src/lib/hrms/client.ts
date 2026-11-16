@@ -16,6 +16,10 @@ export async function refreshSession(): Promise<boolean> {
   refreshing = refreshing ?? (async () => {
     try {
       const res = await fetch('/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      if (res.status === 409) { // another tab is mid-rotation; its fresh cookies are about to land
+        await new Promise((r) => setTimeout(r, 400))
+        return true
+      }
       return res.ok
     } catch {
       return false
