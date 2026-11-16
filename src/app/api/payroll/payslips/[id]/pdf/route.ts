@@ -23,7 +23,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     const companyRow = await db.setting.findUnique({ where: { key: 'company.profile' } })
-    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'NovaTech Solutions (Pvt.) Ltd', address: 'Karachi, Pakistan' }
+    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'KINTO HRMS', address: 'Karachi, Pakistan' }
 
     const buf = payslipSlipPDF({
       companyName: company.name,

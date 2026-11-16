@@ -133,7 +133,7 @@ export const DEFAULT_RULES: Record<string, { value: string; label: string; categ
   [POLICY_KEYS.OVERTIME_RATE]: { value: '250', label: 'Overtime Rate (PKR/hour)', category: 'PAYROLL' },
 }
 
-export const APP_NAME = 'NovaTech HRMS'
+export const APP_NAME = 'KINTO HRMS'
 
 export const UPLOAD_DIR = 'uploads'
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024

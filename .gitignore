@@ -54,3 +54,6 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Browser regression artifacts
+/playwright-report/
+/test-results/

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (!run || !run.payslips.length) return fail('No payroll run for this month.', 404)
 
     const companyRow = await db.setting.findUnique({ where: { key: 'company.profile' } })
-    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'NovaTech Solutions (Pvt.) Ltd', address: 'Karachi, Pakistan' }
+    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'KINTO HRMS', address: 'Karachi, Pakistan' }
 
     const inputs: SalarySlipInput[] = run.payslips.map((p) => ({
       companyName: company.name,

@@ -1,5 +1,6 @@
 'use client'
 
+import { APP_NAME } from '@/lib/hrms/constants'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Building2, Loader2, ShieldCheck, KeyRound } from 'lucide-react'
@@ -80,7 +81,7 @@ export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
             <Building2 className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-800 leading-tight">NovaTech HRMS</h1>
+            <h1 className="text-lg font-bold text-slate-800 leading-tight">{APP_NAME}</h1>
             <p className="text-[11px] text-slate-500">People · Attendance · Payroll</p>
           </div>
         </div>
@@ -124,7 +125,7 @@ export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs text-slate-600">Email</Label>
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@novatech.pk" required autoComplete="username" className="bg-white/70" />
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required autoComplete="username" className="bg-white/70" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-xs text-slate-600">Password</Label>

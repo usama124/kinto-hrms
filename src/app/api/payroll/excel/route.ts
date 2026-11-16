@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     }))
 
     const companyRow = await db.setting.findUnique({ where: { key: 'company.profile' } })
-    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'NovaTech Solutions (Pvt.) Ltd' }
+    const company = companyRow ? JSON.parse(companyRow.value) : { name: 'KINTO HRMS' }
 
     const buf = await payrollMasterSheet(monthLabel(month), rows, company.name)
     await writeAudit({

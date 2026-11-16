@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/lib/hrms/constants'
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -14,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ResourceInn HRMS — People, Attendance & Payroll",
+  title: `${APP_NAME} — People, Attendance & Payroll`,
   description:
     "Ultra-clean HR Management System: glassmorphism + Material 3 design, strict RBAC, two-tier leave approvals, configurable HR policy rules, short-hour tracking, automated payroll and PDF reporting.",
-  keywords: ["HRMS", "ResourceInn", "HR", "Payroll", "Attendance", "Leave Management"],
+  keywords: ["HRMS", "KINTO", "HR", "Payroll", "Attendance", "Leave Management"],
 };
 
 export default function RootLayout({

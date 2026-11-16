@@ -1,5 +1,5 @@
 /**
- * NovaTech HRMS — seed for the upgraded dual-role, biometric, 3-tier architecture.
+ * KINTO HRMS — seed for the upgraded dual-role, biometric, 3-tier architecture.
  * Run: bun prisma/seed.ts
  */
 import { PrismaClient } from '@prisma/client'
@@ -47,7 +47,7 @@ const PREV_MONTH = shiftMonth(THIS_MONTH, -1)
 const YEAR = Number(THIS_MONTH.slice(0, 4))
 
 async function main() {
-  console.log('Seeding NovaTech HRMS… (today =', nowKey, ')')
+  console.log('Seeding KINTO HRMS… (today =', nowKey, ')')
 
   // ─── wipe ───────────────────────────────────────────────────────────────────
   await db.attendanceAudit.deleteMany()
@@ -79,9 +79,9 @@ async function main() {
   // ─── settings ───────────────────────────────────────────────────────────────
   const settings: [string, string][] = [
     ['company.profile', JSON.stringify({
-      name: 'NovaTech Solutions (Pvt.) Ltd',
+      name: 'KINTO HRMS',
       address: 'Plot 42, I.I. Chundrigar Road, Karachi 74000, Pakistan',
-      phone: '+92 21 3456 7890', email: 'payroll@novatech.pk', regNo: 'REG-KHI-2019-04871',
+      phone: '+92 21 3456 7890', email: 'payroll@example.com', regNo: 'REG-KHI-2019-04871',
     })],
     ['payroll.config', JSON.stringify({
       pfRate: 0.05,

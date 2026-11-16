@@ -1,5 +1,6 @@
 'use client'
 
+import { APP_NAME } from '@/lib/hrms/constants'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -101,7 +102,7 @@ export function Shell(props: {
                 <Building2 className="h-4.5 w-4.5" />
               </div>
               <div className="hidden sm:block min-w-0">
-                <p className="text-sm font-bold text-slate-800 leading-tight truncate">NovaTech HRMS</p>
+                <p className="text-sm font-bold text-slate-800 leading-tight truncate">{APP_NAME}</p>
                 <p className="text-[10px] text-slate-500 truncate">{user.designation} · {user.departmentName}</p>
               </div>
             </div>
@@ -232,7 +233,7 @@ export function Shell(props: {
         {/* Sticky footer */}
         <footer className="mt-auto border-t border-white/50 bg-white/60 backdrop-blur-xl px-4 md:px-6 py-2.5 sm:pl-[84px]">
           <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
-            <span>© {new Date().getFullYear()} NovaTech Solutions · Glassmorphism + Material 3 HR Suite</span>
+            <span>© {new Date().getFullYear()} {APP_NAME} · Glassmorphism + Material 3 HR Suite</span>
             <span className="tnum">Zero-trust RBAC · TOTP MFA · 3-tier approvals · Server-side PDF engine</span>
           </div>
         </footer>

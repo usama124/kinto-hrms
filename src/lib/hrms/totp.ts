@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/lib/hrms/constants'
 // ─── TOTP (RFC 6238) — Google Authenticator / Authy compatible ────────────────
 // Dependency-free implementation: base32 secret, HMAC-SHA1, 30s step, 6 digits.
 
@@ -76,7 +77,7 @@ export function verifyTotp(secret: string, code: string, window = 1, stepSeconds
   return false
 }
 
-export function otpauthUri(email: string, secret: string, issuer = 'NovaTech HRMS'): string {
+export function otpauthUri(email: string, secret: string, issuer = APP_NAME): string {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`
 }
 

@@ -1,4 +1,4 @@
-# NovaTech HRMS — Frontend UI Contract (for view subagents)
+# KINTO HRMS — Frontend UI Contract (for view subagents)
 
 ## Stack & Conventions
 - Next.js 16 App Router, React 19, TypeScript strict, Tailwind 4, shadcn/ui (New York), lucide-react icons, framer-motion, recharts, sonner toasts.

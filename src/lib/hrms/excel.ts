@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/lib/hrms/constants'
 import 'server-only'
 import ExcelJS from 'exceljs'
 import type { DetailedCalc } from '@/lib/hrms/payroll-v2'
@@ -12,7 +13,7 @@ import type { DetailedCalc } from '@/lib/hrms/payroll-v2'
  */
 export async function payrollMasterSheet(monthLabel: string, rows: DetailedCalc[], companyName: string): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'NovaTech HRMS'
+  wb.creator = APP_NAME
   wb.created = new Date()
 
   const ws = wb.addWorksheet(`Payroll ${monthLabel}`, {

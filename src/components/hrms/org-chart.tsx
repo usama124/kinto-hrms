@@ -1,5 +1,6 @@
 'use client'
 
+import { APP_NAME } from '@/lib/hrms/constants'
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Network, Building2, Users2, RefreshCw } from 'lucide-react'
@@ -92,7 +93,7 @@ export function OrgChartView({ user }: { user: SessionUser }) {
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-800">NovaTech Solutions</p>
+              <p className="text-sm font-bold text-slate-800">{APP_NAME}</p>
               <p className="text-[11px] text-slate-400 tnum">{data.departments.length} departments · {totalPeople} people</p>
             </div>
             <Pill text="HQ — KARACHI" tone="teal" className="ml-auto" />

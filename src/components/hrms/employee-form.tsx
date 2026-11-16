@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, UserPlus, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError, type Employee360, type Meta } from '@/lib/hrms/client'
@@ -48,6 +48,38 @@ const ROLE_OPTIONS = [
   { value: 'HR_MANAGER', label: 'HR Manager', adminOnly: true },
 ]
 
+// Keep field component identities stable across parent state updates.
+function SelectField({ label, value, onChange, placeholder, options }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string
+  options: { value: string; label: string }[]
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-slate-500">{label}</Label>
+      <Select value={value || '__none'} onValueChange={(v) => onChange(v === '__none' ? '' : v)}>
+        <SelectTrigger className="w-full h-9 bg-white/70 text-xs"><SelectValue placeholder={placeholder} /></SelectTrigger>
+        <SelectContent className="max-h-64 hrms-scroll">
+          <SelectItem value="__none" className="text-xs text-slate-400">— None —</SelectItem>
+          {options.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+function TextField({ label, value, onChange, type = 'text', placeholder, required, disabled }: {
+  label: string; value: string; onChange: (v: string) => void
+  type?: string; placeholder?: string; required?: boolean; disabled?: boolean
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-slate-500">{label}{required ? ' *' : ''}</Label>
+      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        className="h-9 bg-white/70 text-xs" />
+    </div>
+  )
+}
+
 /**
  * Add / Edit employee dialog — System Admin & HR Manager only (enforced server-side).
  * Add flow: POST /api/employees (auto employee code + leave balances + audit).
@@ -60,6 +92,9 @@ export function EmployeeFormDialog(props: {
   onSaved?: () => void
 }) {
   const { open, onClose, userId, onSaved } = props
+  // A parent rerender may provide a new callback without changing the employee.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   const isEdit = !!userId
   const [selfRole, setSelfRole] = useState('')
   const [meta, setMeta] = useState<Meta | null>(null)
@@ -102,12 +137,12 @@ export function EmployeeFormDialog(props: {
             isActive: e.isActive,
           })
         })
-        .catch((err) => { toast.error(err instanceof ApiError ? err.message : 'Failed to load employee'); onClose() })
+        .catch((err) => { toast.error(err instanceof ApiError ? err.message : 'Failed to load employee'); onCloseRef.current() })
         .finally(() => setLoading(false))
     } else {
       setForm(EMPTY)
     }
-  }, [open, isEdit, userId, onClose])
+  }, [open, isEdit, userId])
 
   const teams = useMemo(() => (meta?.teams ?? []).filter((t) => !form.departmentId || t.departmentId === form.departmentId), [meta, form.departmentId])
   const people = meta?.people ?? []
@@ -155,37 +190,6 @@ export function EmployeeFormDialog(props: {
     }
   }
 
-  function SelectField({ label, value, onChange, placeholder, options }: {
-    label: string; value: string; onChange: (v: string) => void; placeholder: string
-    options: { value: string; label: string }[]
-  }) {
-    return (
-      <div className="space-y-1">
-        <Label className="text-[11px] text-slate-500">{label}</Label>
-        <Select value={value || '__none'} onValueChange={(v) => onChange(v === '__none' ? '' : v)}>
-          <SelectTrigger className="w-full h-9 bg-white/70 text-xs"><SelectValue placeholder={placeholder} /></SelectTrigger>
-          <SelectContent className="max-h-64 hrms-scroll">
-            <SelectItem value="__none" className="text-xs text-slate-400">— None —</SelectItem>
-            {options.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-    )
-  }
-
-  function TextField({ label, value, onChange, type = 'text', placeholder, required, disabled }: {
-    label: string; value: string; onChange: (v: string) => void
-    type?: string; placeholder?: string; required?: boolean; disabled?: boolean
-  }) {
-    return (
-      <div className="space-y-1">
-        <Label className="text-[11px] text-slate-500">{label}{required ? ' *' : ''}</Label>
-        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
-          className="h-9 bg-white/70 text-xs" />
-      </div>
-    )
-  }
-
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="sm:max-w-2xl glass-strong max-h-[92vh] overflow-y-auto hrms-scroll">
@@ -224,7 +228,7 @@ export function EmployeeFormDialog(props: {
 
             <TabsContent value="personal" className="mt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <TextField label="Full Name" required value={form.fullName} onChange={set('fullName')} placeholder="e.g., Fatima Noor" />
+                <TextField label="Full Name" required value={form.fullName} onChange={set('fullName')} placeholder="e.g., Muhammad Muaz" />
                 <TextField label="Designation" required value={form.designation} onChange={set('designation')} placeholder="e.g., Software Engineer" />
                 <TextField label="Father Name" value={form.fatherName} onChange={set('fatherName')} />
                 <TextField label="Mother Name" value={form.motherName} onChange={set('motherName')} />
@@ -249,7 +253,7 @@ export function EmployeeFormDialog(props: {
 
             <TabsContent value="contact" className="mt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <TextField label="Work Email" required type="email" value={form.email} onChange={set('email')} placeholder="name@novatech.pk" />
+                <TextField label="Work Email" required type="email" value={form.email} onChange={set('email')} placeholder="name@company.com" />
                 <TextField label="Personal Email" type="email" value={form.personalEmail} onChange={set('personalEmail')} />
                 <TextField label="Phone" value={form.phone} onChange={set('phone')} placeholder="+92 300 1234567" />
                 <TextField label="Emergency Contact Name" value={form.emergencyContactName} onChange={set('emergencyContactName')} />
@@ -288,7 +292,7 @@ export function EmployeeFormDialog(props: {
                 </div>
               )}
               {!isEdit && (
-                <p className="text-[11px] text-slate-400">A temporary password <b className="tnum">NovaTech@123</b> will be assigned and shown after onboarding. Leave balances are initialized automatically.</p>
+                <p className="text-[11px] text-slate-400">A temporary password will be assigned and shown after onboarding. Leave balances are initialized automatically.</p>
               )}
             </TabsContent>
           </Tabs>
