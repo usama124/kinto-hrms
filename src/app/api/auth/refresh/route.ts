@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       user: {
         id: user.id, email: user.email, fullName: user.fullName, role: user.role,
         employeeCode: user.employeeCode, designation: user.designation,
-        avatarColor: user.avatarColor, departmentName: user.department?.name ?? '—',
+        avatarColor: user.avatarColor, avatarUploadId: user.avatarUploadId, departmentName: user.department?.name ?? '—',
         mfaEnabled: user.mfaEnabled, mfaRequired: isMfaRequired(user.role), mustChangePassword: user.mustChangePassword,
       },
     }) as NextResponse

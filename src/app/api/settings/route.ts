@@ -11,7 +11,7 @@ type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
-/** Company / payroll / device settings. Read for admins+accountant (device credentials are never returned), write SUPER_ADMIN only. */
+/** Company / payroll settings. Read for admins+accountants, write SUPER_ADMIN only. Device credentials are managed in /api/biometric/devices. */
 export async function GET() {
   return guard(async () => {
     const session = await requireSession()
@@ -27,14 +27,9 @@ export async function GET() {
     }
     // The device key + HMAC secret together let anyone forge attendance punches: never send them to the browser.
     // The System Admin sees that they are set (and can replace them via PATCH); everyone else sees status only.
-    const dev = map['biometric.device']
-    if (isObj(dev)) {
-      map['biometric.device'] = {
-        model: dev.model, sn: dev.sn, enabled: dev.enabled,
-        key: session.role === ROLES.SUPER_ADMIN && typeof dev.key === 'string' ? dev.key : MASK,
-        secret: MASK, secretSet: Boolean(dev.secret),
-      }
-    }
+    // Device credentials live in the device registry (/api/biometric/devices); they are never part of the settings payload.
+    delete map['biometric.device']
+    delete map['biometric.devices']
     return ok({ settings: map })
   })
 }
@@ -72,15 +67,6 @@ function validate(key: string, raw: unknown, existing: Obj | null): { value: unk
         slabs.push({ upto, rate })
       }
       return { value: { pfRate, eoobiAmount, eoobiThreshold, taxSlabs: slabs } }
-    }
-    case 'biometric.device': {
-      const k = typeof raw.key === 'string' ? raw.key.trim() : ''
-      if (k.length < 8 || k.length > 100 || k === MASK) return { error: 'Device key must be 8–100 characters.' }
-      // MASK / empty = keep the stored secret; a new secret must be strong enough to be an HMAC key
-      const incoming = typeof raw.secret === 'string' ? raw.secret : ''
-      const secret = incoming === '' || incoming === MASK ? String(existing?.secret ?? '') : incoming
-      if (secret.length < 16 || secret.length > 200) return { error: 'Device secret must be 16–200 characters.' }
-      return { value: { key: k, secret, enabled: raw.enabled === true, model: cleanText(raw.model, 60), sn: cleanText(raw.sn, 60) } }
     }
     case 'app.demo':
       return { value: { mode: raw.mode === true } }

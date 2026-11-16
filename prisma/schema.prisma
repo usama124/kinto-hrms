@@ -106,8 +106,9 @@ model User {
   shiftId          String?
   shift            Shift?   @relation(fields: [shiftId], references: [id])
   joiningDate      DateTime
-  employmentStatus String   @default("Permanent") // Permanent | Probation | Contract
+  employmentStatus String   @default("Permanent") // Permanent | Probation | Contract | Internship
   avatarColor      String   @default("#0D9488")
+  avatarUploadId   String? // Upload.id of the profile picture (PNG/JPEG); null → coloured initials
   baseSalary       Float    @default(0)
   hrAllowance      Float    @default(0)
   utilityAllowance Float    @default(0)

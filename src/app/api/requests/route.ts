@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         ...(status ? { status } : {}),
       },
       include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true } },
+        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
         leaveType: { select: { id: true, name: true, colorCode: true } },
         attachment: { select: { id: true, name: true, mime: true } },
         approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(input.shortHours)) return fail('shortHours must be a number.', 422)
 
     const requester = await db.user.findUnique({ where: { id: targetUserId } })
-    if (!requester) return fail('Requester not found.', 404)
+    if (!requester || !requester.isActive) return fail('Requester not found.', 404)
     // accounts that never had balances provisioned (System Admin) or a new year: create them before the quota gate runs
     await ensureLeaveBalances(targetUserId, Number(input.startDate.slice(0, 4)))
 
@@ -141,11 +141,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (targetUserId !== session.userId) {
+      await db.notification.create({
+        data: { userId: targetUserId, title: `${typeLabel(input.type)} request filed for you`, body: `${session.fullName} submitted a ${typeLabel(input.type)} request on your behalf (${result.dayCount} day(s)).`, type: 'INFO' },
+      })
+    }
+
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       targetUserId: requester.id, targetName: requester.fullName,
       entityType: 'REQUEST', entityId: created.id,
-      reason: `${typeLabel(input.type)} request created (${result.dayCount} day(s))`,
+      reason: `${typeLabel(input.type)} request created (${result.dayCount} day(s))${targetUserId !== session.userId ? ` on behalf of ${requester.fullName}` : ''}`,
       ipAddress: req.headers.get('x-forwarded-for') ?? null,
     })
 

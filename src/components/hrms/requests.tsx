@@ -8,8 +8,7 @@ import { toast } from 'sonner'
 import {
   api, ApiError, refreshSession, dayLabel, dateTimeLabel,
   type SessionUser, type PersonLite, type RequestRow, type AttRequestRow, type Balance, type Meta,
-  REQUEST_TYPE_LABELS, STATUS_BADGE_TONE, STAGE_LABELS,
-} from '@/lib/hrms/client'
+  REQUEST_TYPE_LABELS, STATUS_BADGE_TONE, STAGE_LABELS, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, Pill, SegmentedBar, SectionTitle, EmptyState } from './shared'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -217,7 +216,7 @@ export function RequestsView({ user, people, onApproved }: {
       <tr onClick={() => toggle(`leave:${r.id}`)} className="border-b border-slate-50 hover:bg-teal-50/40 cursor-pointer transition-colors">
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-2.5">
-            <Avatar name={r.user.fullName} color={r.user.avatarColor} size="sm" />
+            <Avatar name={r.user.fullName} color={r.user.avatarColor} size="sm" src={avatarSrc(r.user)} />
             <div className="min-w-0">
               <button
                 onClick={(e) => { e.stopPropagation(); openProfile(r.userId) }}
@@ -305,7 +304,7 @@ export function RequestsView({ user, people, onApproved }: {
       <tr onClick={() => toggle(`att:${r.id}`)} className="border-b border-slate-50 hover:bg-teal-50/40 cursor-pointer transition-colors">
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-2.5">
-            <Avatar name={r.user.fullName} color={r.user.avatarColor} size="sm" />
+            <Avatar name={r.user.fullName} color={r.user.avatarColor} size="sm" src={avatarSrc(r.user)} />
             <div className="min-w-0">
               <button
                 onClick={(e) => { e.stopPropagation(); openProfile(r.userId) }}
@@ -564,6 +563,8 @@ export function RequestsView({ user, people, onApproved }: {
       {/* ── Create Request dialog ──────────────────────────────────────────── */}
       {createOpen && (
         <CreateRequestDialog
+          selfId={user.id}
+          canFileForOthers={user.role === 'HR_MANAGER' || user.role === 'SUPER_ADMIN'}
           onClose={() => setCreateOpen(false)}
           onCreated={() => { setCreateOpen(false); void loadLeave(); void loadBalances(); onApproved() }}
         />
@@ -592,8 +593,10 @@ function DividerRow({ colSpan, caption }: { colSpan: number; caption: string }) 
 
 type CreateType = 'LEAVE' | 'OFFICIAL_DUTY' | 'TRAVEL' | 'SHORT_LEAVE'
 
-function CreateRequestDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreateRequestDialog({ onClose, onCreated, selfId, canFileForOthers }: { onClose: () => void; onCreated: () => void; selfId: string; canFileForOthers: boolean }) {
   const [meta, setMeta] = useState<Meta | null>(null)
+  // HR / System Admin may file on behalf of any employee; everyone else can only ever file for themselves (the server enforces it too)
+  const [forUserId, setForUserId] = useState('self')
   const [metaError, setMetaError] = useState(false)
   const [type, setType] = useState<CreateType>('LEAVE')
   const [leaveTypeId, setLeaveTypeId] = useState('')
@@ -675,6 +678,7 @@ function CreateRequestDialog({ onClose, onCreated }: { onClose: () => void; onCr
       await api('/api/requests', {
         method: 'POST',
         body: JSON.stringify({
+          userId: canFileForOthers && forUserId !== 'self' ? forUserId : undefined,
           type: isShort ? 'LEAVE' : type,
           leaveTypeId: type === 'LEAVE' || isShort ? leaveTypeId || undefined : undefined,
           isShortLeave: isShort || undefined,
@@ -685,7 +689,8 @@ function CreateRequestDialog({ onClose, onCreated }: { onClose: () => void; onCr
           attachmentId: attachmentId || undefined,
         }),
       })
-      toast.success('Request submitted — routed to Team Lead for first-level approval')
+      const who = canFileForOthers && forUserId !== 'self' ? meta.people.find((p) => p.id === forUserId)?.fullName : null
+      toast.success(who ? `Request filed on behalf of ${who}` : 'Request submitted — routed for first-level approval')
       onCreated()
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Submission failed'
@@ -720,6 +725,22 @@ function CreateRequestDialog({ onClose, onCreated }: { onClose: () => void; onCr
           </div>
         ) : (
           <div className="space-y-3.5 pt-1">
+            {canFileForOthers && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-600">Employee</Label>
+                <Select value={forUserId} onValueChange={setForUserId}>
+                  <SelectTrigger className="h-9 bg-white/80 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="self" className="text-xs">Myself</SelectItem>
+                    {meta.people.filter((p) => p.id !== selfId).map((p) => (
+                      <SelectItem key={p.id} value={p.id} className="text-xs">{p.fullName} · {p.employeeCode}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {forUserId !== 'self' && <p className="text-[10px] text-amber-600">Filed on their behalf — they are notified, and it is recorded in the audit log under your name.</p>}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-600">Request Type</Label>
               <Select value={type} onValueChange={(v) => setType(v as CreateType)}>

@@ -108,6 +108,7 @@ export type RosterMember = {
   employeeCode: string
   designation: string
   avatarColor: string
+  avatarUploadId: string | null
   role: string
   shortHours: number
   absentDays: number
@@ -122,7 +123,7 @@ export async function rosterFor(userIds: string[], month: string): Promise<Roste
   if (!userIds.length) return []
   const users = await db.user.findMany({
     where: { id: { in: userIds }, isActive: true },
-    select: { id: true, fullName: true, employeeCode: true, designation: true, avatarColor: true, role: true },
+    select: { id: true, fullName: true, employeeCode: true, designation: true, avatarColor: true, avatarUploadId: true, role: true },
     orderBy: { employeeCode: 'asc' },
   })
   const logs = await db.attendanceLog.findMany({ where: { userId: { in: userIds }, dateKey: { gte: fromKey, lte: to } } })
@@ -144,7 +145,7 @@ export async function rosterFor(userIds: string[], month: string): Promise<Roste
     if (shortHours > 4 && m.missing > 0) pill = 'ATTENTION'
     return {
       id: u.id, fullName: u.fullName, employeeCode: u.employeeCode,
-      designation: u.designation, avatarColor: u.avatarColor, role: u.role,
+      designation: u.designation, avatarColor: u.avatarColor, avatarUploadId: u.avatarUploadId, role: u.role,
       shortHours, absentDays: m.absent, missingPunches: m.missing, lateCount: m.late,
       pill,
     }

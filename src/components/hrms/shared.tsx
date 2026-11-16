@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import { ATT_BADGE_TONE } from '@/lib/hrms/constants'
@@ -93,8 +94,13 @@ export function ScoreRing({ pct, size = 108, label }: { pct: number; size?: numb
   )
 }
 
-export function Avatar({ name, color, size = 'md' }: { name: string; color: string; size?: 'sm' | 'md' | 'lg' }) {
-  const dims = { sm: 'h-7 w-7 text-[10px]', md: 'h-10 w-10 text-xs', lg: 'h-14 w-14 text-base' }[size]
+export function Avatar({ name, color, size = 'md', src }: { name: string; color: string; size?: 'sm' | 'md' | 'lg' | 'xl'; src?: string | null }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null) // keyed by src so a NEW picture gets a fresh chance
+  const dims = { sm: 'h-7 w-7 text-[10px]', md: 'h-10 w-10 text-xs', lg: 'h-14 w-14 text-base', xl: 'h-24 w-24 text-2xl' }[size]
+  // a profile picture when there is one (falls back to initials if it fails to load)
+  if (src && src !== failedSrc) {
+    return <img src={src} alt={name} onError={() => setFailedSrc(src)} className={cn('rounded-full object-cover shrink-0 shadow-inner bg-slate-100', dims)} />
+  }
   const initials = name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
   return (
     <div className={cn('flex items-center justify-center rounded-full font-bold text-white shrink-0 shadow-inner', dims)} style={{ backgroundColor: color }}>

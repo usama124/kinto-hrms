@@ -3,8 +3,8 @@ import { db } from '@/lib/db'
 import { verifyMfaStageToken } from '@/lib/auth'
 import { guard, fail, ok } from '@/lib/hrms/api-utils'
 import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
-import { verifyTotpOnce, verifyBackupCode } from '@/lib/hrms/totp'
-import { decryptSecret } from '@/lib/hrms/secrets'
+import { verifyBackupCode } from '@/lib/hrms/totp'
+import { loadAuthenticators, matchAuthenticator, serializeAuthenticators } from '@/lib/hrms/authenticators'
 import { writeAudit } from '@/lib/hrms/audit'
 import { startSession } from '@/lib/hrms/session'
 
@@ -37,7 +37,13 @@ export async function POST(req: NextRequest) {
         await db.user.update({ where: { id: user.id }, data: { backupCodes: JSON.stringify(result.remaining) } })
       }
     } else {
-      valid = user.mfaSecret ? verifyTotpOnce(user.id, decryptSecret(user.mfaSecret), code) : false
+      // any registered authenticator may satisfy the challenge
+      const items = loadAuthenticators(user.mfaSecret)
+      const hit = matchAuthenticator(user.id, items, code)
+      valid = Boolean(hit)
+      if (hit) {
+        await db.user.update({ where: { id: user.id }, data: { mfaSecret: serializeAuthenticators(items.map((a) => (a.id === hit.id ? { ...a, lastUsedAt: new Date().toISOString() } : a))) } })
+      }
     }
 
     if (!valid) {
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
       user: {
         id: user.id, email: user.email, fullName: user.fullName, role: user.role,
         employeeCode: user.employeeCode, designation: user.designation,
-        avatarColor: user.avatarColor, departmentName: user.department?.name ?? '—',
+        avatarColor: user.avatarColor, avatarUploadId: user.avatarUploadId, departmentName: user.department?.name ?? '—',
         mfaEnabled: true, mfaRequired: true, mustChangePassword: user.mustChangePassword,
       },
     }) as NextResponse

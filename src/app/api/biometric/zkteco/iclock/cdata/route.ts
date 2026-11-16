@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { guard, ok, fail } from '@/lib/hrms/api-utils'
-import { getDeviceCreds, verifyDeviceAuth, parsePunchPayload, ingestPunches } from '@/lib/hrms/biometric'
+import { getDevices, verifyDeviceAuth, parsePunchPayload, ingestPunches } from '@/lib/hrms/biometric'
 import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { writeAudit } from '@/lib/hrms/audit'
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const rl = guardRate(req, 'biometric', RATE_LIMITS.BIOMETRIC.max, RATE_LIMITS.BIOMETRIC.windowMs)
   if (!rl.ok) return new Response(`Rate limited`, { status: 429 })
 
-  const creds = await getDeviceCreds()
+  const devices = await getDevices()
   const qp = req.nextUrl.searchParams
   const key = qp.get('key') ?? req.headers.get('x-device-key')
   const ts = qp.get('ts') ?? req.headers.get('x-device-ts')
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   // The signature can't cover itself: sign the query string WITHOUT key/ts/sig, i.e. just the punch data.
   const body = req.nextUrl.search.slice(1).split('&').filter((p) => !/^(key|ts|sig)=/.test(p)).join('&')
 
-  const auth = verifyDeviceAuth(creds, key, ts, sig, body)
+  const auth = verifyDeviceAuth(devices, key, ts, sig, body)
   if (!auth.ok) return new Response('OK', { status: 200 }) // handshake ack; punches rejected below
 
   // Some devices push punches via GET query string
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (text.includes('PIN=') || text.includes('pin=')) {
     const punches = parsePunchPayload(text)
     if (punches.length) {
-      const result = await ingestPunches(punches, qp.get('SN'), clientIp(req))
+      const result = await ingestPunches(punches, auth.device?.sn || qp.get('SN'), clientIp(req))
       await writeAudit({ entityType: 'SECURITY', reason: `ZKTeco GET ingestion: ${result.stored} punches (${result.duplicates} dup, ${result.unknownPins} unknown pins)`, ipAddress: clientIp(req) })
       return new Response(`OK:${result.stored}`, { status: 200 })
     }
@@ -45,12 +45,12 @@ export async function POST(req: NextRequest) {
 
     const raw = await req.text()
     if (raw.length > 2 * 1024 * 1024) return fail('Payload too large.', 413)
-    const creds = await getDeviceCreds()
+    const devices = await getDevices()
     const key = req.headers.get('x-device-key')
     const ts = req.headers.get('x-device-ts')
     const sig = req.headers.get('x-device-sig')
 
-    const auth = verifyDeviceAuth(creds, key, ts, sig, raw)
+    const auth = verifyDeviceAuth(devices, key, ts, sig, raw)
     if (!auth.ok) {
       await writeAudit({ entityType: 'SECURITY', reason: `Rejected biometric push: ${auth.reason}`, ipAddress: ip })
       return fail(`Device rejected: ${auth.reason}`, 401)
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const punches = parsePunchPayload(raw)
     if (!punches.length) return fail('No parsable punch lines found in payload.', 422)
 
-    const result = await ingestPunches(punches, req.nextUrl.searchParams.get('SN'), ip)
+    const result = await ingestPunches(punches, auth.device?.sn || req.nextUrl.searchParams.get('SN'), ip)
     await writeAudit({
       entityType: 'SECURITY',
       reason: `ZKTeco K50 sync: ${result.stored} new punches, ${result.duplicates} duplicates, ${result.rejected} rejected, ${result.daysRebuilt} day(s) rebuilt, ${result.unknownPins} unknown PIN(s)`,

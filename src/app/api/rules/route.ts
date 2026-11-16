@@ -22,6 +22,11 @@ export async function GET() {
   })
 }
 
+/** Rules the admin adds themselves. Built-in rules (DEFAULT_RULES) drive attendance/payroll maths; custom ones are recorded policy values. */
+const CUSTOM_PREFIX = 'custom.'
+const CATEGORIES = ['GENERAL', 'LEAVE_CAPS', 'SHORT_HOURS', 'PAYROLL'] as const
+const MAX_CUSTOM_RULES = 100
+
 // Allowed range per rule — bad values here silently corrupt payroll and attendance maths for everyone.
 const RANGES: Record<string, { min: number; max: number; int?: boolean }> = {
   [POLICY_KEYS.SHIFT_DURATION]: { min: 60, max: 1440, int: true },
@@ -50,9 +55,20 @@ export async function PUT(req: NextRequest) {
     if (!body) return fail('Invalid payload.', 422)
 
     // validate EVERYTHING first so a bad entry can't leave a half-applied update
-    const updates: { key: string; value: string }[] = []
+    const updates: { key: string; value: string; label?: string }[] = []
+    const customKeys = new Set((await db.policyRule.findMany({ where: { key: { startsWith: CUSTOM_PREFIX } }, select: { key: true } })).map((r) => r.key))
     for (const u of Array.isArray(body.rules) ? body.rules : []) {
       const key = String(u?.key ?? '')
+      if (key.startsWith(CUSTOM_PREFIX)) {
+        // user-defined rule: free-form value, label editable, but it must already exist (create via POST)
+        if (!customKeys.has(key)) return fail(`Unknown rule "${cleanText(key, 60)}".`, 422)
+        const value = String(u?.value ?? '').trim()
+        if (!value || value.length > 200) return fail('A rule value is required (max 200 characters).', 422)
+        const label = u?.label !== undefined ? cleanText(u.label, 80) : undefined
+        if (label !== undefined && label.length < 2) return fail('A rule name is required.', 422)
+        updates.push({ key, value, label })
+        continue
+      }
       if (!(key in DEFAULT_RULES)) return fail(`Unknown rule "${cleanText(key, 60)}".`, 422)
       const problem = checkRule(key, u?.value)
       if (problem) return fail(`${DEFAULT_RULES[key].label} ${problem}.`, 422)
@@ -89,6 +105,10 @@ export async function PUT(req: NextRequest) {
 
     await db.$transaction(async (tx) => {
       for (const u of updates) {
+        if (u.key.startsWith(CUSTOM_PREFIX)) {
+          await tx.policyRule.update({ where: { key: u.key }, data: { value: u.value, ...(u.label ? { label: u.label } : {}) } })
+          continue
+        }
         const d = DEFAULT_RULES[u.key]
         await tx.policyRule.upsert({ where: { key: u.key }, update: { value: u.value }, create: { key: u.key, value: u.value, label: d.label, category: d.category } })
       }
@@ -111,5 +131,53 @@ export async function PUT(req: NextRequest) {
       db.holiday.findMany({ orderBy: { date: 'asc' } }),
     ])
     return ok({ rules, leaveTypes, holidays })
+  })
+}
+
+/** Add a custom policy rule (Admin / HR). */
+export async function POST(req: NextRequest) {
+  return guard(async () => {
+    const session = await requireSession()
+    if (!isOrgAdmin(session.role)) return fail('Forbidden: only Admin / HR can add policy rules.', 403)
+    const body = await req.json().catch(() => null)
+    const label = cleanText(body?.label, 80)
+    const value = String(body?.value ?? '').trim()
+    const category = String(body?.category ?? 'GENERAL')
+    if (label.length < 2) return fail('Rule name is required (at least 2 characters).', 422)
+    if (!value || value.length > 200) return fail('Rule value is required (max 200 characters).', 422)
+    if (!(CATEGORIES as readonly string[]).includes(category)) return fail('Unknown rule category.', 422)
+    if ((await db.policyRule.count({ where: { key: { startsWith: CUSTOM_PREFIX } } })) >= MAX_CUSTOM_RULES) return fail(`Custom rule limit reached (${MAX_CUSTOM_RULES}).`, 422)
+
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'rule'
+    let key = `${CUSTOM_PREFIX}${slug}`
+    for (let i = 2; await db.policyRule.findUnique({ where: { key } }); i++) key = `${CUSTOM_PREFIX}${slug}-${i}`
+
+    const rule = await db.policyRule.create({ data: { key, value, label, category } })
+    await writeAudit({
+      actorId: session.userId, actorName: session.fullName, actorRole: session.role,
+      entityType: 'RULE', entityId: key, fieldName: 'rule.added', newValue: `${label} = ${value}`,
+      reason: 'Custom policy rule added', ipAddress: clientIp(req),
+    })
+    return ok({ rule }, { status: 201 })
+  })
+}
+
+/** Delete a CUSTOM rule. Built-in rules can be edited but never deleted (the engine depends on them). */
+export async function DELETE(req: NextRequest) {
+  return guard(async () => {
+    const session = await requireSession()
+    if (!isOrgAdmin(session.role)) return fail('Forbidden: only Admin / HR can delete policy rules.', 403)
+    const body = await req.json().catch(() => null)
+    const key = String(body?.key ?? '')
+    if (!key.startsWith(CUSTOM_PREFIX)) return fail('Built-in rules cannot be deleted.', 403)
+    const rule = await db.policyRule.findUnique({ where: { key } })
+    if (!rule) return fail('Rule not found.', 404)
+    await db.policyRule.delete({ where: { key } })
+    await writeAudit({
+      actorId: session.userId, actorName: session.fullName, actorRole: session.role,
+      entityType: 'RULE', entityId: key, fieldName: 'rule.deleted', oldValue: `${rule.label} = ${rule.value}`,
+      reason: 'Custom policy rule deleted', ipAddress: clientIp(req),
+    })
+    return ok({ ok: true })
   })
 }

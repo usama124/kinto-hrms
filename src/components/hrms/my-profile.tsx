@@ -4,15 +4,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   User, Fingerprint, Phone, Wallet, IdCard, BadgeCheck, Pencil, CalendarDays,
-  ShieldCheck, Users,
+  ShieldCheck, Users, Camera,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, ApiError, ROLE_LABELS, fmtDateKey, type Employee360, type Balance } from '@/lib/hrms/client'
+import { api, ApiError, ROLE_LABELS, fmtDateKey, type Employee360, type Balance, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, KeyValue, Pill, SegmentedBar, SectionTitle, EmptyState } from './shared'
 import { Button } from '@/components/ui/button'
 import { EmployeeFormDialog } from './employee-form'
 import { ProfileSheet, ROLE_TONE } from './profile-sheet'
 import { ChangePasswordForm } from './change-password'
+import { ProfilePhotoDialog } from './profile-photo'
+import { MfaManager } from './mfa-manager'
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
@@ -25,12 +27,13 @@ function fmtDate(iso: string | null): string {
  * My Profile — the signed-in user's own profile, rendered as a FULL PAGE.
  * Only Admin / HR can edit (server-side enforced); everyone else sees read-only details.
  */
-export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: string }) {
+export function MyProfileView({ userId, selfRole, onSelfUpdated }: { userId: string; selfRole: string; onSelfUpdated?: () => void }) {
   const [employee, setEmployee] = useState<Employee360 | null>(null)
   const [balances, setBalances] = useState<Balance[]>([])
   const [loading, setLoading] = useState(true)
   const [editOpen, setEditOpen] = useState(false)
   const [sheetUser, setSheetUser] = useState<string | null>(null)
+  const [photoOpen, setPhotoOpen] = useState(false)
 
   // own profile: only the System Admin edits it (an HR Manager's record is changed by the System Admin — enforced server-side)
   const canEdit = selfRole === 'SUPER_ADMIN'
@@ -66,7 +69,7 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
       {/* Hero header */}
       <GlassCard strong className="p-5 md:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <Avatar name={e.fullName} color={e.avatarColor} size="lg" />
+          <Avatar name={e.fullName} color={e.avatarColor} size="xl" src={avatarSrc(e)} />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold text-slate-800">{e.fullName}</h1>
             <p className="text-xs text-slate-500 mt-0.5">{e.designation} · {e.departmentName}{e.teamName ? ` · ${e.teamName}` : ''}</p>
@@ -78,13 +81,23 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
             </div>
           </div>
           <div className="flex flex-col items-start sm:items-end gap-2">
-            {canEdit && (
-              <Button size="sm" onClick={() => setEditOpen(true)} className="bg-teal-600 hover:bg-teal-700 text-white h-9 text-xs">
+            {canEdit ? (
+              <>
+                <Button size="sm" onClick={() => setEditOpen(true)} className="bg-teal-600 hover:bg-teal-700 text-white h-9 text-xs">
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit Profile
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setPhotoOpen(true)} className="h-9 text-xs">
+                  <Camera className="h-3.5 w-3.5 mr-1.5" /> Change photo
+                </Button>
+              </>
+            ) : (
+              // every employee can change their OWN picture here; the rest of the profile stays with HR / Admin
+              <Button size="sm" onClick={() => setPhotoOpen(true)} className="bg-teal-600 hover:bg-teal-700 text-white h-9 text-xs">
                 <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit Profile
               </Button>
             )}
-            <p className="text-[11px] text-slate-400 flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5 text-teal-500" /> Only Admin / HR can edit this profile
+            <p className="text-[11px] text-slate-400 flex items-center gap-1 max-w-[260px] sm:text-right">
+              <ShieldCheck className="h-3.5 w-3.5 text-teal-500 shrink-0" /> {canEdit ? 'Only Admin / HR can edit profile details' : 'You can change your profile picture; other details are maintained by HR / Admin'}
             </p>
           </div>
         </div>
@@ -212,7 +225,7 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
           <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
             {e.directs.map((d) => (
               <button key={d.id} onClick={() => setSheetUser(d.id)} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-white/80 transition-colors text-left glass-subtle">
-                <Avatar name={d.fullName} color={d.avatarColor} size="sm" />
+                <Avatar name={d.fullName} color={d.avatarColor} size="sm" src={avatarSrc(d)} />
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-slate-700 truncate">{d.fullName}</p>
                   <p className="text-[10px] text-slate-400 truncate">{d.designation}</p>
@@ -223,11 +236,17 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
         </GlassCard>
       )}
 
-      <GlassCard className="p-4">
-        <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> Security — change password</span></SectionTitle>
-        <p className="text-xs text-slate-500 mb-3">Changing your password signs you out of every other device.</p>
-        <div className="max-w-md"><ChangePasswordForm onDone={() => undefined} /></div>
-      </GlassCard>
+      <div className="grid lg:grid-cols-2 gap-3">
+        <GlassCard className="p-4">
+          <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> Security — change password</span></SectionTitle>
+          <p className="text-xs text-slate-500 mb-3">Changing your password signs you out of every other device.</p>
+          <div className="max-w-md"><ChangePasswordForm onDone={() => undefined} /></div>
+        </GlassCard>
+        <GlassCard className="p-4">
+          <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> Multi-factor authentication</span></SectionTitle>
+          <MfaManager />
+        </GlassCard>
+      </div>
 
       <div className="flex items-center gap-2 text-[11px] text-slate-400">
         <IdCard className="h-3.5 w-3.5" /> Your details are maintained by HR — requests for corrections go to your HR Manager.
@@ -242,6 +261,13 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
           onSaved={() => { setEditOpen(false); void load() }}
         />
       )}
+
+      <ProfilePhotoDialog
+        open={photoOpen}
+        onClose={() => setPhotoOpen(false)}
+        person={e}
+        onChanged={() => { void load(); onSelfUpdated?.() }}
+      />
 
       {/* Viewing other people's profiles opens in the 360° popup panel */}
       <ProfileSheet

@@ -3,6 +3,7 @@ import { requireSession, guard, ok } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
 import { getRules } from '@/lib/hrms/policy'
 import { todayKey } from '@/lib/hrms/dates'
+import { getDesignations } from '@/lib/hrms/designations'
 
 /** Shared metadata for selectors, calendars and the rules engine preview. */
 export async function GET() {
@@ -18,13 +19,14 @@ export async function GET() {
       db.team.findMany({ include: { teamLead: { select: { fullName: true } } }, orderBy: { name: 'asc' } }),
       visibleUserIds(session),
     ])
+    const designations = await getDesignations()
     const people = await db.user.findMany({
       where: { id: { in: visible } },
-      select: { id: true, fullName: true, employeeCode: true, designation: true, role: true, avatarColor: true, departmentId: true, teamLeadId: true, managerId: true },
+      select: { id: true, fullName: true, employeeCode: true, designation: true, role: true, avatarColor: true, avatarUploadId: true, departmentId: true, teamLeadId: true, managerId: true },
       orderBy: { fullName: 'asc' },
     })
     return ok({
-      departments, leaveTypes, shifts, teams,
+      departments, leaveTypes, shifts, teams, designations,
       holidays: holidays.map((h) => h.date),
       weeklyOffDay: rules.weeklyOffDay,
       graceMinutes: rules.graceMinutes,

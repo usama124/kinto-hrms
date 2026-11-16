@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { guard, ok, fail } from '@/lib/hrms/api-utils'
-import { getDeviceCreds, verifyDeviceAuth, ingestPunches, type ParsedPunch } from '@/lib/hrms/biometric'
+import { getDevices, verifyDeviceAuth, ingestPunches, type ParsedPunch } from '@/lib/hrms/biometric'
 import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { getSession } from '@/lib/auth'
 import { isOrgAdmin } from '@/lib/hrms/constants'
@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
     if (raw.length > 2 * 1024 * 1024) return fail('Payload too large.', 413)
 
     // Device HMAC path — authenticate BEFORE parsing anything
-    const creds = await getDeviceCreds()
-    const deviceAuth = verifyDeviceAuth(creds, req.headers.get('x-device-key'), req.headers.get('x-device-ts'), req.headers.get('x-device-sig'), raw)
+    const devices = await getDevices()
+    const deviceAuth = verifyDeviceAuth(devices, req.headers.get('x-device-key'), req.headers.get('x-device-ts'), req.headers.get('x-device-sig'), raw)
 
     // Session fallback (SUPER_ADMIN / HR only, MFA enrolled)
     if (!deviceAuth.ok) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
     if (!parsed.length) return fail('No valid punches in payload.', 422)
 
-    const result = await ingestPunches(parsed, creds.key ? 'CJ7T201660772' : null, ip)
+    const result = await ingestPunches(parsed, deviceAuth.device?.sn || null, ip)
     await writeAudit({
       entityType: 'SECURITY',
       reason: `Batch biometric sync: ${result.stored} stored, ${result.duplicates} duplicates, ${result.rejected} rejected, ${result.daysRebuilt} day(s) rebuilt, ${result.unknownPins} unknown PIN(s)`,

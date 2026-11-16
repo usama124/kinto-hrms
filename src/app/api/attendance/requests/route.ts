@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const rows = await db.attendanceRequest.findMany({
       where: { userId: { in: ids } },
       include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true } },
+        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
         approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },

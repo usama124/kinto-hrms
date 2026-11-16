@@ -12,8 +12,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Resp
 import { toast } from 'sonner'
 import {
   api, ApiError, fmtMinutes, timeLabel,
-  type SessionUser, type DashboardData, type UnitStats, type RosterMember,
-} from '@/lib/hrms/client'
+  type SessionUser, type DashboardData, type UnitStats, type RosterMember, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, EmptyState, GlassCard, KpiCard, KeyValue, Pill, ScoreRing, SectionTitle, SegmentedBar } from './shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -141,7 +140,7 @@ function RosterRow({ m, showLate = false }: { m: RosterMember; showLate?: boolea
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-3 py-2.5 rounded-xl hover:bg-white/70 transition-colors">
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <Avatar name={m.fullName} color={m.avatarColor} size="sm" />
+        <Avatar name={m.fullName} color={m.avatarColor} size="sm" src={avatarSrc(m)} />
         <div className="min-w-0">
           <button
             type="button"

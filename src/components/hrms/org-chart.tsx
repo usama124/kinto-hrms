@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Network, Building2, Users2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, ApiError, ROLE_LABELS, type OrgStructure, type SessionUser } from '@/lib/hrms/client'
+import { api, ApiError, ROLE_LABELS, type OrgStructure, type SessionUser, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, Pill, EmptyState } from './shared'
 import { Button } from '@/components/ui/button'
 import { ProfileSheet, ROLE_TONE } from './profile-sheet'
@@ -19,7 +19,7 @@ function PersonChip({ p, onOpen }: { p: Person; onOpen: (id: string) => void }) 
       className="inline-flex items-center gap-2 rounded-full bg-white/80 ring-1 ring-inset ring-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:ring-teal-500/40 hover:bg-teal-50/60 transition-colors"
       title={`Open ${p.fullName}'s profile`}
     >
-      <Avatar name={p.fullName} color={p.avatarColor} size="sm" />
+      <Avatar name={p.fullName} color={p.avatarColor} size="sm" src={avatarSrc(p)} />
       <span className="max-w-[150px] truncate">{p.fullName}</span>
       <span className="text-[9px] text-slate-400 tnum">{p.employeeCode}</span>
     </button>
@@ -33,7 +33,7 @@ function LeadCard({ p, label, onOpen }: { p: Person; label: string; onOpen: (id:
       className="flex items-center gap-2.5 rounded-xl bg-teal-600/10 ring-1 ring-inset ring-teal-600/20 px-3 py-2 hover:bg-teal-600/20 transition-colors text-left"
       title={`Open ${p.fullName}'s profile`}
     >
-      <Avatar name={p.fullName} color={p.avatarColor} size="sm" />
+      <Avatar name={p.fullName} color={p.avatarColor} size="sm" src={avatarSrc(p)} />
       <div className="min-w-0">
         <p className="text-[9px] uppercase tracking-wide text-teal-700/70 font-bold">{label}</p>
         <p className="text-xs font-bold text-slate-700 truncate">{p.fullName}</p>

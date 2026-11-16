@@ -9,7 +9,7 @@ import {
   Search, Bell, ChevronLeft, LogOut, Building2, CheckCheck, CircleUser, Network,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, ApiError, type SessionUser, type PersonLite, type Notif, dateTimeLabel } from '@/lib/hrms/client'
+import { api, ApiError, type SessionUser, type PersonLite, type Notif, dateTimeLabel, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, Pill } from './shared'
 import { openProfile } from './profile-sheet'
 import { Button } from '@/components/ui/button'
@@ -129,7 +129,7 @@ export function Shell(props: {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 glass-subtle h-9 pl-1.5 pr-2.5 hover:bg-white/90 transition-colors" aria-label="Profile menu">
-                    <Avatar name={user.fullName} color={user.avatarColor} size="sm" />
+                    <Avatar name={user.fullName} color={user.avatarColor} size="sm" src={avatarSrc(user)} />
                     <span className="hidden lg:block text-xs font-semibold text-slate-700 max-w-[120px] truncate">{user.fullName}</span>
                   </button>
                 </DropdownMenuTrigger>
@@ -255,7 +255,7 @@ export function Shell(props: {
               <CommandGroup heading="People">
                 {people.slice(0, 12).map((p) => (
                   <CommandItem key={p.id} onSelect={() => { setPaletteOpen(false); openProfile(p.id) }}>
-                    <Avatar name={p.fullName} color={p.avatarColor} size="sm" />
+                    <Avatar name={p.fullName} color={p.avatarColor} size="sm" src={avatarSrc(p)} />
                     <span className="ml-2 text-sm">{p.fullName}</span>
                     <span className="ml-auto text-xs text-slate-400 tnum">{p.employeeCode}</span>
                   </CommandItem>

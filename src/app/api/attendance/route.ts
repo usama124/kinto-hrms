@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const { fromKey, toKey } = monthRangeKeys(month)
     const logs = await db.attendanceLog.findMany({
       where: { userId: { in: target }, dateKey: { gte: fromKey, lte: toKey } },
-      include: { user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true } } },
+      include: { user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, avatarUploadId: true } } },
       orderBy: [{ userId: 'asc' }, { dateKey: 'asc' }],
     })
 

@@ -3,11 +3,11 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { guard, fail, ok } from '@/lib/hrms/api-utils'
 import { verifyTotpOnce } from '@/lib/hrms/totp'
-import { decryptSecret } from '@/lib/hrms/secrets'
+import { loadAuthenticators, serializeAuthenticators } from '@/lib/hrms/authenticators'
 import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { writeAudit } from '@/lib/hrms/audit'
 
-/** Confirm enrollment with a live TOTP code → MFA becomes mandatory at login. */
+/** Confirm the pending authenticator with a live code → it becomes active (and MFA is switched on for the first one). */
 export async function POST(req: NextRequest) {
   return guard(async () => {
     const session = await getSession()
@@ -18,16 +18,24 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     const code = String(body?.code ?? '').slice(0, 16)
     const user = await db.user.findUnique({ where: { id: session.userId } })
-    if (!user || !user.mfaSecret) return fail('Start enrollment first.', 422)
-    if (user.mfaEnabled) return fail('MFA is already enabled.', 409)
+    const items = loadAuthenticators(user?.mfaSecret ?? null)
+    const pending = items.find((a) => a.pending && (!body?.id || a.id === body.id))
+    if (!user || !pending) return fail('Start enrollment first.', 422)
 
-    if (!verifyTotpOnce(user.id, decryptSecret(user.mfaSecret), code)) return fail('Invalid code — check your authenticator app.', 422)
+    if (!verifyTotpOnce(`${user.id}:${pending.id}`, pending.secret, code)) return fail('Invalid code — check your authenticator app.', 422)
 
-    await db.user.update({ where: { id: user.id }, data: { mfaEnabled: true } })
+    const now = new Date().toISOString()
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        mfaEnabled: true,
+        mfaSecret: serializeAuthenticators(items.map((a) => (a.id === pending.id ? { ...a, pending: false, lastUsedAt: now } : a))),
+      },
+    })
     await writeAudit({
       actorId: user.id, actorName: user.fullName, actorRole: user.role,
-      entityType: 'MFA', entityId: user.id, fieldName: 'mfaEnabled', oldValue: 'false', newValue: 'true',
-      reason: 'TOTP enrollment confirmed', ipAddress: clientIp(req),
+      entityType: 'MFA', entityId: user.id, fieldName: 'authenticator.added', newValue: pending.label,
+      reason: user.mfaEnabled ? 'Additional authenticator confirmed' : 'TOTP enrollment confirmed', ipAddress: clientIp(req),
     })
     return ok({ mfaEnabled: true })
   })

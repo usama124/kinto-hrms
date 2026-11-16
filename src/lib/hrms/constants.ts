@@ -147,6 +147,9 @@ export const DEFAULT_RULES: Record<string, { value: string; label: string; categ
   [POLICY_KEYS.OVERTIME_RATE]: { value: '250', label: 'Overtime Rate (PKR/hour)', category: 'PAYROLL' },
 }
 
+/** Allowed values of User.employmentStatus (server validates, forms render this list). */
+export const EMPLOYMENT_STATUSES = ['Permanent', 'Probation', 'Contract', 'Internship'] as const
+
 export const APP_NAME = 'KINTO HRMS'
 
 export const UPLOAD_DIR = 'uploads'

@@ -68,11 +68,25 @@ export async function downloadFile(path: string, fallbackName: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000)
 }
 
+/** URL of a user's profile picture, or null → show coloured initials. `?v=` makes a changed picture a new, cacheable URL. */
+export function avatarSrc(u?: { id: string; avatarUploadId?: string | null } | null): string | null {
+  return u?.avatarUploadId ? `/api/employees/${u.id}/avatar?v=${u.avatarUploadId}` : null
+}
+
+/** multipart POST with the same one-shot refresh-and-retry as api(). */
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  let res = await fetch(path, { method: 'POST', body: form })
+  if (res.status === 401 && (await refreshSession())) res = await fetch(path, { method: 'POST', body: form })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new ApiError((data as { error?: string }).error ?? 'Upload failed', res.status)
+  return data as T
+}
+
 // ─── Shared API types ─────────────────────────────────────────────────────────
 
 export type SessionUser = {
   id: string; email: string; fullName: string; role: string
-  employeeCode: string; designation: string; avatarColor: string; departmentName: string
+  employeeCode: string; designation: string; avatarColor: string; avatarUploadId?: string | null; departmentName: string
   teamName?: string | null
   joiningDate?: string; baseSalary?: number; hrAllowance?: number; utilityAllowance?: number
   teamLeadId?: string | null; teamLeadName?: string | null
@@ -85,7 +99,7 @@ export type SessionUser = {
 
 export type PersonLite = {
   id: string; fullName: string; employeeCode: string; designation: string
-  role: string; avatarColor: string; departmentId: string | null
+  role: string; avatarColor: string; avatarUploadId?: string | null; departmentId: string | null
   teamLeadId: string | null; managerId: string | null
 }
 
@@ -95,7 +109,7 @@ export type Employee360 = {
   employeeCode: string; designation: string
   departmentName: string; departmentId: string | null
   teamId: string | null; teamName: string | null
-  joiningDate: string; avatarColor: string
+  joiningDate: string; avatarColor: string; avatarUploadId?: string | null
   teamLead: { id: string; fullName: string; designation: string } | null
   manager: { id: string; fullName: string; designation: string } | null
   shiftId: string | null; shiftName: string | null; shiftTime: string | null
@@ -111,22 +125,22 @@ export type Employee360 = {
   baseSalary?: number; hrAllowance?: number; utilityAllowance?: number; allowances?: number
   bankName?: string | null; bankIban?: string | null
   canSeeSalary: boolean; completionPct: number
-  directs: { id: string; fullName: string; designation: string; avatarColor: string }[]
+  directs: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null }[]
 }
 
 /** Payload of GET /api/org-structure. */
 export type OrgStructure = {
   departments: {
     id: string; name: string; code: string
-    manager: { id: string; fullName: string; designation: string; avatarColor: string } | null
-    users: { id: string; fullName: string; designation: string; avatarColor: string; role: string; teamId: string | null; employeeCode: string }[]
+    manager: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null } | null
+    users: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null; role: string; teamId: string | null; employeeCode: string }[]
     teams: {
       id: string; name: string
-      teamLead: { id: string; fullName: string; designation: string; avatarColor: string } | null
-      users: { id: string; fullName: string; designation: string; avatarColor: string; role: string; employeeCode: string }[]
+      teamLead: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null } | null
+      users: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null; role: string; employeeCode: string }[]
     }[]
   }[]
-  unassigned?: { id: string; fullName: string; designation: string; avatarColor: string; role: string; employeeCode: string }[]
+  unassigned?: { id: string; fullName: string; designation: string; avatarColor: string; avatarUploadId?: string | null; role: string; employeeCode: string }[]
 }
 
 export type Meta = {
@@ -134,6 +148,7 @@ export type Meta = {
   leaveTypes: { id: string; name: string; code: string; annualQuota: number; colorCode: string; monthlyCap: number | null; attachmentThreshold: number | null; isPaid: boolean }[]
   shifts: { id: string; name: string; startTime: string; endTime: string; expectedMinutes: number; graceMinutes: number; workingDays?: string }[]
   teams: { id: string; name: string; departmentId: string; teamLeadId: string | null; teamLeadName?: string | null }[]
+  designations: string[]
   holidays: string[]
   weeklyOffDay: number
   graceMinutes: number
@@ -171,7 +186,7 @@ export type DashboardData = {
 
 export type RosterMember = {
   id: string; fullName: string; employeeCode: string; designation: string
-  avatarColor: string; role: string
+  avatarColor: string; avatarUploadId?: string | null; role: string
   shortHours: number; absentDays: number; missingPunches: number; lateCount: number
   pill: 'ON_TRACK' | 'SHORT_HOURS_ALERT' | 'MISSING_PUNCH' | 'ATTENTION'
 }
@@ -189,7 +204,7 @@ export type RequestRow = {
   dayCount: number; reason: string; attachmentId: string | null
   attachment?: { id: string; name: string; mime: string } | null
   status: string; currentStage: string; createdAt: string
-  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string }
+  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string; avatarUploadId?: string | null }
   approvals: { id: string; level: string; action: string; comment: string | null; createdAt: string; approver: { fullName: string; role: string } }[]
 }
 
@@ -197,7 +212,7 @@ export type AttRequestRow = {
   id: string; userId: string; date: string
   requestedCheckIn: string; requestedCheckOut: string; reason: string
   status: string; currentStage: string; createdAt: string
-  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string }
+  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string; avatarUploadId?: string | null }
   approvals: { id: string; level: string; action: string; comment: string | null; createdAt: string; approver: { fullName: string; role: string } }[]
 }
 
@@ -206,7 +221,7 @@ export type AttLog = {
   expectedMinutes: number; workedMinutes: number; shortMinutes: number; lateMinutes: number
   earlyMinutes?: number; breakMinutes: number; isWFH: boolean; source: string
   isManuallyUpdated?: boolean; notes: string | null
-  user: { id: string; fullName: string; employeeCode: string; avatarColor: string }
+  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; avatarUploadId?: string | null }
 }
 
 export type PayslipV2 = {

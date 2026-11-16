@@ -8,8 +8,7 @@ import {
 import { toast } from 'sonner'
 import {
   api, ApiError, downloadFile, ROLE_LABELS, fmtMinutes, fmtDateKey, dateTimeLabel,
-  type Employee360, type Balance, type AttLog, type RequestRow,
-} from '@/lib/hrms/client'
+  type Employee360, type Balance, type AttLog, type RequestRow, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, KeyValue, Pill, SegmentedBar, SectionTitle, EmptyState } from './shared'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -145,7 +144,7 @@ export function ProfileSheet(props: {
             <div className="p-5 space-y-5">
               {/* Identity */}
               <div className="flex items-center gap-4">
-                <Avatar name={e.fullName} color={e.avatarColor} size="lg" />
+                <Avatar name={e.fullName} color={e.avatarColor} size="lg" src={avatarSrc(e)} />
                 <div className="min-w-0">
                   <p className="text-base font-bold text-slate-800">{e.fullName}</p>
                   <p className="text-xs text-slate-500">{e.designation} · {e.departmentName}{e.teamName ? ` · ${e.teamName}` : ''}</p>
@@ -292,7 +291,7 @@ export function ProfileSheet(props: {
                   <div className="space-y-2 max-h-40 overflow-y-auto hrms-scroll">
                     {e.directs.map((d) => (
                       <button key={d.id} onClick={() => onOpenUser(d.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/80 transition-colors text-left">
-                        <Avatar name={d.fullName} color={d.avatarColor} size="sm" />
+                        <Avatar name={d.fullName} color={d.avatarColor} size="sm" src={avatarSrc(d)} />
                         <span className="text-xs font-medium text-slate-700">{d.fullName}</span>
                         <span className="ml-auto text-[11px] text-slate-400 truncate">{d.designation}</span>
                       </button>

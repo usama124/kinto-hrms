@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const log = await db.attendanceLog.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true } },
+        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, avatarUploadId: true, designation: true } },
         breaks: true,
         audits: { include: { admin: { select: { fullName: true } } }, orderBy: { createdAt: 'desc' } },
       },

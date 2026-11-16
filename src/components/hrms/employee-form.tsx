@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, UserPlus, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError, type Employee360, type Meta } from '@/lib/hrms/client'
+import { EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,7 @@ const EMPTY: FormState = {
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 const GENDERS = ['Male', 'Female']
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed']
-const EMP_STATUSES = ['Permanent', 'Probation', 'Contract']
+const EMP_STATUSES: readonly string[] = EMPLOYMENT_STATUSES
 const ROLE_OPTIONS = [
   { value: 'EMPLOYEE', label: 'Employee', adminOnly: false },
   { value: 'TEAM_LEAD', label: 'Team Lead', adminOnly: false },
@@ -147,6 +148,11 @@ export function EmployeeFormDialog(props: {
 
   const teams = useMemo(() => (meta?.teams ?? []).filter((t) => !form.departmentId || t.departmentId === form.departmentId), [meta, form.departmentId])
   const people = meta?.people ?? []
+  const designationOptions = useMemo(() => {
+    const list = meta?.designations ?? []
+    const all = form.designation && !list.some((d) => d.toLowerCase() === form.designation.toLowerCase()) ? [form.designation, ...list] : list
+    return all.map((d) => ({ value: d, label: d }))
+  }, [meta, form.designation])
   const isAdmin = selfRole === 'SUPER_ADMIN'
   const roleOptions = ROLE_OPTIONS.filter((r) => isAdmin || !r.adminOnly)
 
@@ -230,7 +236,7 @@ export function EmployeeFormDialog(props: {
             <TabsContent value="personal" className="mt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <TextField label="Full Name" required value={form.fullName} onChange={set('fullName')} placeholder="e.g., Muhammad Muaz" />
-                <TextField label="Designation" required value={form.designation} onChange={set('designation')} placeholder="e.g., Software Engineer" />
+                <SelectField label="Designation *" value={form.designation} onChange={set('designation')} placeholder="Select designation" options={designationOptions} />
                 <TextField label="Father Name" value={form.fatherName} onChange={set('fatherName')} />
                 <TextField label="Mother Name" value={form.motherName} onChange={set('motherName')} />
                 <TextField label="Date of Birth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} />

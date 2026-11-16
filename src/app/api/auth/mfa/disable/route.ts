@@ -2,8 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/auth'
 import { guard, fail, ok, requireSession } from '@/lib/hrms/api-utils'
-import { verifyTotpOnce } from '@/lib/hrms/totp'
-import { decryptSecret } from '@/lib/hrms/secrets'
+import { loadAuthenticators, matchAuthenticator } from '@/lib/hrms/authenticators'
 import { revokeAllForUser } from '@/lib/hrms/tokens'
 import { guardRate, clientIp, RATE_LIMITS } from '@/lib/hrms/rate-limit'
 import { writeAudit } from '@/lib/hrms/audit'
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
     if (!user || !user.mfaEnabled) return fail('MFA is not enabled.', 409)
     if (isMfaRequired(user.role)) return fail('MFA is mandatory for your role and cannot be disabled.', 403)
     if (!verifyPassword(password, user.passwordHash)) return fail('Password incorrect.', 401)
-    if (!user.mfaSecret || !verifyTotpOnce(user.id, decryptSecret(user.mfaSecret), code)) return fail('Invalid authenticator code.', 401)
+    if (!matchAuthenticator(user.id, loadAuthenticators(user.mfaSecret), code)) return fail('Invalid authenticator code.', 401)
 
     await db.user.update({ where: { id: user.id }, data: { mfaEnabled: false, mfaSecret: null, backupCodes: null } })
     await revokeAllForUser(user.id)

@@ -19,33 +19,63 @@ import { applyPunches } from '@/lib/hrms/attendance-engine'
  * STATUS: 0=check-in 1=check-out 2/255=unknown (first/last punch semantics still applied).
  */
 
-export type DeviceCreds = { key: string; secret: string; enabled: boolean }
+/**
+ * Registered attendance devices (Setting `biometric.devices`, JSON array). Each device has its own key + HMAC secret,
+ * so one lost/compromised device can be disabled or rotated without touching the others.
+ * Older installs only have the single `biometric.device` setting — it is read as one device until the list is first saved.
+ */
+export type BiometricDevice = {
+  id: string
+  name: string
+  model: string
+  sn: string
+  key: string
+  secret: string
+  enabled: boolean
+  createdAt: string
+}
 
-export async function getDeviceCreds(): Promise<DeviceCreds> {
-  const row = await db.setting.findUnique({ where: { key: 'biometric.device' } })
-  if (!row) return { key: '', secret: '', enabled: false }
-  try {
-    const parsed = JSON.parse(row.value) as DeviceCreds & { sn?: string; model?: string }
-    return { key: parsed.key ?? '', secret: parsed.secret ?? '', enabled: parsed.enabled ?? false }
-  } catch {
-    return { key: '', secret: '', enabled: false } // malformed setting → ingestion off, not a 500
+const DEVICES_KEY = 'biometric.devices'
+const LEGACY_KEY = 'biometric.device'
+
+export async function getDevices(): Promise<BiometricDevice[]> {
+  const row = await db.setting.findUnique({ where: { key: DEVICES_KEY } })
+  if (row) {
+    try {
+      const list = JSON.parse(row.value)
+      return Array.isArray(list) ? (list as BiometricDevice[]) : []
+    } catch { return [] } // malformed → ingestion off, not a 500
   }
+  const legacy = await db.setting.findUnique({ where: { key: LEGACY_KEY } })
+  if (!legacy) return []
+  try {
+    const p = JSON.parse(legacy.value) as { key?: string; secret?: string; enabled?: boolean; sn?: string; model?: string }
+    if (!p.key || !p.secret) return []
+    return [{ id: 'legacy', name: p.model ?? 'ZKTeco device', model: p.model ?? 'ZKTeco K50', sn: p.sn ?? '', key: p.key, secret: p.secret, enabled: p.enabled ?? false, createdAt: '' }]
+  } catch { return [] }
+}
+
+export async function saveDevices(list: BiometricDevice[]): Promise<void> {
+  const value = JSON.stringify(list)
+  await db.setting.upsert({ where: { key: DEVICES_KEY }, create: { key: DEVICES_KEY, value }, update: { value } })
 }
 
 /** Constant-time string compare (hashing first makes the lengths equal). */
 const safeEqual = (a: string, b: string) =>
   timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
 
-/** `body` MUST be the exact raw bytes the device signed (never a re-serialised copy). */
-export function verifyDeviceAuth(creds: DeviceCreds, key: string | null, ts: string | null, sig: string | null, body: string): { ok: boolean; reason?: string } {
-  if (!creds.enabled || !creds.key || !creds.secret) return { ok: false, reason: 'Biometric ingestion disabled' }
-  if (!key || !safeEqual(key, creds.key)) return { ok: false, reason: 'Unknown device key' }
+/** `body` MUST be the exact raw bytes the device signed (never a re-serialised copy). Returns the matched device on success. */
+export function verifyDeviceAuth(devices: BiometricDevice[], key: string | null, ts: string | null, sig: string | null, body: string): { ok: boolean; reason?: string; device?: BiometricDevice } {
+  if (!devices.some((d) => d.enabled && d.key && d.secret)) return { ok: false, reason: 'Biometric ingestion disabled' }
+  const device = key ? devices.find((d) => d.key && safeEqual(key, d.key)) : undefined
+  if (!device) return { ok: false, reason: 'Unknown device key' }
+  if (!device.enabled || !device.secret) return { ok: false, reason: 'This device is disabled' }
   if (!ts || !sig) return { ok: false, reason: 'Missing signature headers' }
   const tsNum = Number(ts)
   if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > 5 * 60_000) return { ok: false, reason: 'Stale timestamp' }
-  const expected = createHmac('sha256', creds.secret).update(`${ts}.${body}`).digest('hex')
+  const expected = createHmac('sha256', device.secret).update(`${ts}.${body}`).digest('hex')
   if (!safeEqual(expected, sig)) return { ok: false, reason: 'Bad HMAC signature' }
-  return { ok: true }
+  return { ok: true, device }
 }
 
 export type ParsedPunch = { pin: string; ts: Date; status: number | null; raw: string }

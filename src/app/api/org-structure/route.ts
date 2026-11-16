@@ -13,7 +13,7 @@ export async function GET() {
       return fail('Forbidden: the organization chart is not available for this role.', 403)
     }
     void session
-    const personSelect = { id: true, fullName: true, designation: true, avatarColor: true, role: true, employeeCode: true, teamId: true } as const
+    const personSelect = { id: true, fullName: true, designation: true, avatarColor: true, avatarUploadId: true, role: true, employeeCode: true, teamId: true } as const
     const departments = await db.department.findMany({
       include: {
         manager: { select: { id: true, fullName: true, designation: true, avatarColor: true } },

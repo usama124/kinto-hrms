@@ -1,17 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, RefreshCw, ShieldCheck, Fingerprint, ScrollText, Clock, Building, Plus, Save, Copy } from 'lucide-react'
+import { ShieldCheck, Fingerprint, ScrollText, Clock, Building, Plus, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError, dateTimeLabel, type SessionUser, type AuditRow } from '@/lib/hrms/client'
-import { GlassCard, Pill, SectionTitle, EmptyState, KeyValue } from './shared'
+import { GlassCard, Pill, SectionTitle, EmptyState } from './shared'
+import { MfaManager } from './mfa-manager'
+import { BiometricDevices } from './biometric-devices'
+import { DesignationsCard } from './designations-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { QrCode as QrIcon } from 'lucide-react'
 
 type RuleRow = { id: string; key: string; value: string; label: string; category: string }
 type LeaveTypeRow = { id: string; name: string; code: string; annualQuota: number; monthlyCap: number | null; attachmentThreshold: number | null; colorCode: string; isPaid: boolean }
@@ -56,6 +58,9 @@ function PolicyTab(_props: { onChanged: () => void }) {
   const [holidays, setHolidays] = useState<HolidayRow[]>([])
   const [saving, setSaving] = useState(false)
   const [newHoliday, setNewHoliday] = useState({ date: '', name: '' })
+  const [newRule, setNewRule] = useState({ label: '', value: '', category: 'GENERAL' })
+  const [ltOpen, setLtOpen] = useState(false)
+  const [lt, setLt] = useState({ name: '', code: '', annualQuota: 10, isPaid: true, colorCode: '#0D9488', monthlyCap: '', attachmentThreshold: '' })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,7 +80,8 @@ function PolicyTab(_props: { onChanged: () => void }) {
       await api('/api/rules', {
         method: 'PUT',
         body: JSON.stringify({
-          rules: rules.map((r) => ({ key: r.key, value: r.value })),
+          // custom rules also carry their (editable) name; built-in rules keep their fixed label
+          rules: rules.map((r) => (r.key.startsWith('custom.') ? { key: r.key, value: r.value, label: r.label } : { key: r.key, value: r.value })),
           leaveCaps: leaveTypes.map((t) => ({ leaveTypeId: t.id, annualQuota: t.annualQuota, monthlyCap: t.monthlyCap, attachmentThreshold: t.attachmentThreshold })),
         }),
       })
@@ -83,6 +89,40 @@ function PolicyTab(_props: { onChanged: () => void }) {
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Save failed')
     } finally { setSaving(false) }
+  }
+
+  async function addRule() {
+    if (newRule.label.trim().length < 2 || !newRule.value.trim()) return
+    setSaving(true)
+    try {
+      await api('/api/rules', { method: 'POST', body: JSON.stringify(newRule) })
+      toast.success('Rule added')
+      setNewRule({ label: '', value: '', category: 'GENERAL' })
+      void load()
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not add the rule') } finally { setSaving(false) }
+  }
+
+  async function deleteRule(r: RuleRow) {
+    if (!window.confirm(`Delete the rule “${r.label}”?`)) return
+    try {
+      await api('/api/rules', { method: 'DELETE', body: JSON.stringify({ key: r.key }) })
+      toast.success('Rule deleted')
+      void load()
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not delete the rule') }
+  }
+
+  async function addLeaveType() {
+    setSaving(true)
+    try {
+      await api('/api/leave-types', {
+        method: 'POST',
+        body: JSON.stringify({ ...lt, code: lt.code.trim().toUpperCase(), monthlyCap: lt.monthlyCap === '' ? null : Number(lt.monthlyCap), attachmentThreshold: lt.attachmentThreshold === '' ? null : Number(lt.attachmentThreshold) }),
+      })
+      toast.success('Leave type added — every employee now has a balance for it')
+      setLtOpen(false)
+      setLt({ name: '', code: '', annualQuota: 10, isPaid: true, colorCode: '#0D9488', monthlyCap: '', attachmentThreshold: '' })
+      void load()
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Could not add the leave type') } finally { setSaving(false) }
   }
 
   async function addHoliday() {
@@ -112,7 +152,7 @@ function PolicyTab(_props: { onChanged: () => void }) {
           Shift & Short-Hours Policy Engine
         </SectionTitle>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {rules.map((r) => (
+          {rules.filter((r) => !r.key.startsWith('custom.')).map((r) => (
             <div key={r.key} className="glass-subtle rounded-xl p-3">
               <label className="text-[11px] font-semibold text-slate-600">{r.label}</label>
               <Input
@@ -127,7 +167,45 @@ function PolicyTab(_props: { onChanged: () => void }) {
       </GlassCard>
 
       <GlassCard className="p-5">
-        <SectionTitle>Leave Types — Annual Quotas, Monthly Caps & Conditional Certificates</SectionTitle>
+        <SectionTitle>Custom Rules</SectionTitle>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Add your own policy rules and settings (for example a probation period or a notice period). Built-in rules above drive attendance and payroll
+          calculations; custom rules are recorded policy values you and your team can reference, and they are audit-logged. Use <b>Save all rules</b> to store edits.
+        </p>
+        <div className="flex flex-wrap items-end gap-2 mb-4">
+          <div className="space-y-1"><Label className="text-[11px] text-slate-500">Rule name</Label><Input value={newRule.label} onChange={(e) => setNewRule((r) => ({ ...r, label: e.target.value }))} maxLength={80} placeholder="e.g., Probation period (months)" className="h-8 w-60 max-w-full bg-white/70 text-xs" /></div>
+          <div className="space-y-1"><Label className="text-[11px] text-slate-500">Value</Label><Input value={newRule.value} onChange={(e) => setNewRule((r) => ({ ...r, value: e.target.value }))} maxLength={200} placeholder="e.g., 3" className="h-8 w-40 bg-white/70 text-xs" /></div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-slate-500">Category</Label>
+            <select value={newRule.category} onChange={(e) => setNewRule((r) => ({ ...r, category: e.target.value }))} className="h-8 rounded-md border border-slate-200 bg-white/70 px-2 text-xs text-slate-600">
+              {['GENERAL', 'LEAVE_CAPS', 'SHORT_HOURS', 'PAYROLL'].map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+            </select>
+          </div>
+          <Button size="sm" onClick={addRule} disabled={saving || newRule.label.trim().length < 2 || !newRule.value.trim()} className="h-8 bg-teal-600 hover:bg-teal-700 text-white text-xs"><Plus className="h-3.5 w-3.5 mr-1" />Add rule</Button>
+        </div>
+        {rules.filter((r) => r.key.startsWith('custom.')).length === 0 ? (
+          <p className="text-xs text-slate-400">No custom rules yet.</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {rules.filter((r) => r.key.startsWith('custom.')).map((r) => (
+              <div key={r.key} className="glass-subtle rounded-xl p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Pill text={r.category.replace('_', ' ')} tone="slate" />
+                  <button type="button" onClick={() => void deleteRule(r)} className="text-slate-400 hover:text-rose-600" aria-label={`Delete ${r.label}`}><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+                <Input value={r.label} maxLength={80} onChange={(e) => setRules((rs) => rs.map((x) => x.key === r.key ? { ...x, label: e.target.value } : x))} className="mt-2 h-8 bg-white/70 text-xs font-semibold" />
+                <Input value={r.value} maxLength={200} onChange={(e) => setRules((rs) => rs.map((x) => x.key === r.key ? { ...x, value: e.target.value } : x))} className="mt-1.5 h-8 bg-white/70 text-xs tnum" />
+                <p className="mt-1 text-[10px] text-slate-400">{r.key}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
+      <GlassCard className="p-5">
+        <SectionTitle action={<Button size="sm" variant="outline" onClick={() => setLtOpen(true)} className="h-8 text-xs"><Plus className="h-3.5 w-3.5 mr-1" />Add leave type</Button>}>
+          Leave Types — Annual Quotas, Monthly Caps & Conditional Certificates
+        </SectionTitle>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[640px]">
             <thead className="text-slate-400">
@@ -170,6 +248,25 @@ function PolicyTab(_props: { onChanged: () => void }) {
           ))}
         </div>
       </GlassCard>
+
+      <Dialog open={ltOpen} onOpenChange={setLtOpen}>
+        <DialogContent className="sm:max-w-md glass-strong">
+          <DialogHeader><DialogTitle className="text-sm">Add leave type</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-1">
+            <div className="col-span-2 space-y-1"><Label className="text-[11px] text-slate-500">Name *</Label><Input value={lt.name} onChange={(e) => setLt((f) => ({ ...f, name: e.target.value }))} maxLength={40} placeholder="e.g., Maternity Leave" className="bg-white/70 h-9" /></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Code * (A–Z, 0–9, _)</Label><Input value={lt.code} onChange={(e) => setLt((f) => ({ ...f, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }))} maxLength={12} placeholder="MATERNITY" className="bg-white/70 h-9" /></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Annual quota (days)</Label><Input type="number" min={0} max={365} value={lt.annualQuota} onChange={(e) => setLt((f) => ({ ...f, annualQuota: Number(e.target.value) }))} className="bg-white/70 h-9 tnum" /></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Monthly cap (optional)</Label><Input type="number" min={1} max={31} value={lt.monthlyCap} onChange={(e) => setLt((f) => ({ ...f, monthlyCap: e.target.value }))} placeholder="∞" className="bg-white/70 h-9 tnum" /></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Certificate after (days)</Label><Input type="number" min={1} max={31} value={lt.attachmentThreshold} onChange={(e) => setLt((f) => ({ ...f, attachmentThreshold: e.target.value }))} placeholder="—" className="bg-white/70 h-9 tnum" /></div>
+            <div className="flex items-center gap-2"><Switch checked={lt.isPaid} onCheckedChange={(v) => setLt((f) => ({ ...f, isPaid: v }))} /><Label className="text-xs text-slate-600">Paid leave</Label></div>
+            <div className="space-y-1"><Label className="text-[11px] text-slate-500">Colour</Label><Input type="color" value={lt.colorCode} onChange={(e) => setLt((f) => ({ ...f, colorCode: e.target.value }))} className="bg-white/70 h-9 p-1" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLtOpen(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving || lt.name.trim().length < 2 || lt.code.length < 2} onClick={addLeaveType} className="bg-teal-600 hover:bg-teal-700 text-white">Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -274,6 +371,8 @@ function OrgTab() {
           ))}
         </div>
       </GlassCard>
+
+      <DesignationsCard />
 
       <GlassCard className="p-5">
         <SectionTitle>Shift Templates (Office Timing Configuration)</SectionTitle>
@@ -402,106 +501,17 @@ function OrgTab() {
 // ─── Security: MFA enrollment + biometric device sync ────────────────────────
 
 function SecurityTab({ user }: { user: SessionUser }) {
-  const [enroll, setEnroll] = useState<{ secret: string; qrDataUrl: string; backupCodes: string[] } | null>(null)
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [device, setDevice] = useState<{ key: string; secret: string; model?: string; sn?: string; enabled?: boolean } | null>(null)
-
-  const loadDevice = useCallback(async () => {
-    try {
-      const d = await api<{ settings: Record<string, unknown> }>('/api/settings')
-      const dev = d.settings['biometric.device'] as typeof device | undefined
-      setDevice(dev ?? null)
-    } catch { /* ignore */ }
-  }, [])
-  useEffect(() => { void loadDevice() }, [loadDevice])
-
-  async function startEnroll() {
-    setBusy(true)
-    try {
-      const d = await api<{ secret: string; qrDataUrl: string; backupCodes: string[] }>('/api/auth/mfa/enroll', { method: 'POST' })
-      setEnroll(d)
-    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Enrollment failed') } finally { setBusy(false) }
-  }
-  async function confirmEnroll() {
-    setBusy(true)
-    try {
-      await api('/api/auth/mfa/enroll-verify', { method: 'POST', body: JSON.stringify({ code }) })
-      toast.success('MFA enabled — required at every login')
-      setEnroll(null); setCode('')
-    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Invalid code') } finally { setBusy(false) }
-  }
-  async function simulateSync() {
-    setSyncing(true)
-    try {
-      const d = await api<{ dateKey: string; stored: number; duplicates: number; daysRebuilt: number; generated?: number; message?: string }>('/api/biometric/simulate', { method: 'POST', body: '{}' })
-      if (d.message) toast.info(d.message)
-      else toast.success(`Synced ${d.stored} punches for ${d.dateKey} — ${d.daysRebuilt} day(s) rebuilt, ${d.duplicates} duplicates skipped`)
-    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Sync failed') } finally { setSyncing(false) }
-  }
-
+  void user
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <GlassCard className="p-5">
-        <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> TOTP Multi-Factor Authentication</span></SectionTitle>
-        {user.mfaEnabled ? (
-          <div className="space-y-2">
-            <Pill text="MFA ENABLED" tone="emerald" />
-            <p className="text-xs text-slate-500">Your account requires an authenticator code at every login. Backup recovery codes were provided at enrollment.</p>
-          </div>
-        ) : enroll ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <img src={enroll.qrDataUrl} alt="TOTP QR" className="h-32 w-32 rounded-lg border border-slate-200 bg-white p-1.5" />
-              <div className="text-xs text-slate-500 space-y-1">
-                <p>1. Scan in Google Authenticator / Authy</p>
-                <p className="font-mono text-[10px] break-all text-slate-600">{enroll.secret}</p>
-                <button onClick={() => { navigator.clipboard?.writeText(enroll.secret); toast.success('Secret copied') }} className="text-teal-700 hover:underline">Copy secret</button>
-              </div>
-            </div>
-            <div className="glass-subtle rounded-lg p-2.5">
-              <p className="text-[10px] font-semibold text-slate-500 mb-1">Backup codes (one-time)</p>
-              <div className="grid grid-cols-4 gap-1">{enroll.backupCodes.map((c) => <code key={c} className="text-[9px] text-center bg-white/70 rounded px-1 py-0.5 tnum">{c}</code>)}</div>
-            </div>
-            <div className="flex gap-2">
-              <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="123456" className="bg-white/70 h-9 text-center tnum tracking-[0.3em]" maxLength={6} />
-              <Button size="sm" disabled={busy || code.length !== 6} onClick={confirmEnroll} className="bg-teal-600 hover:bg-teal-700 text-white h-9">Confirm</Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              {user.mfaRequired
-                ? 'Your role requires TOTP MFA. Enroll to secure every login.'
-                : 'MFA is optional for your role but recommended for elevated accounts.'}
-            </p>
-            <Button size="sm" onClick={startEnroll} disabled={busy} className="bg-teal-600 hover:bg-teal-700 text-white h-8 text-xs">
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <QrIcon className="h-3.5 w-3.5 mr-1" />} Enroll authenticator
-            </Button>
-          </div>
-        )}
+        <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> Multi-Factor Authentication · my authenticators</span></SectionTitle>
+        <MfaManager />
       </GlassCard>
 
       <GlassCard className="p-5">
-        <SectionTitle><span className="inline-flex items-center gap-1.5"><Fingerprint className="h-4 w-4 text-teal-600" /> ZKTeco K50 Biometric Sync</span></SectionTitle>
-        {device ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <KeyValue label="Device" value={`${device.model ?? 'ZKTeco K50'} · ${device.sn ?? '—'}`} />
-              <KeyValue label="Status" value={device.enabled ? 'Connected (ADMS)' : 'Disabled'} />
-              <KeyValue label="API Key" value={device.key} mono />
-              <KeyValue label="HMAC Secret" value={`${device.secret.slice(0, 6)}••••••••`} mono />
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Devices push punches to <code className="text-[10px] bg-slate-100 rounded px-1">/api/v1/biometric/zkteco/iclock/cdata</code> with HMAC-SHA256 request signatures.
-              First punch = Check-In, last = Check-Out, duplicates rejected by hash, MISSING days auto-flagged for regularization.
-            </p>
-            <Button size="sm" onClick={simulateSync} disabled={syncing} className="bg-teal-600 hover:bg-teal-700 text-white h-8 text-xs">
-              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />} Pull device data now (demo)
-            </Button>
-          </div>
-        ) : <LoadingBlock />}
+        <SectionTitle><span className="inline-flex items-center gap-1.5"><Fingerprint className="h-4 w-4 text-teal-600" /> Biometric attendance devices</span></SectionTitle>
+        <BiometricDevices />
       </GlassCard>
     </div>
   )

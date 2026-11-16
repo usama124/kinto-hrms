@@ -7,8 +7,7 @@ import {
 import { toast } from 'sonner'
 import {
   api, ApiError, dayLabel, timeLabel, fmtMinutes,
-  type SessionUser, type PersonLite, type AttLog,
-} from '@/lib/hrms/client'
+  type SessionUser, type PersonLite, type AttLog, avatarSrc } from '@/lib/hrms/client'
 import { todayKey } from '@/lib/hrms/dates'
 import { Avatar, GlassCard, Pill, ScoreRing, KeyValue, KpiCard, EmptyState } from './shared'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -165,9 +164,10 @@ export function AttendanceView({ user, people }: { user: SessionUser; people: Pe
           <EmptyState icon={<Inbox className="h-8 w-8" />} title="No attendance records for this month" hint="Pick another month or employee." />
         ) : (
           <div className="hrms-scroll max-h-[520px] overflow-x-auto overflow-y-auto rounded-xl border border-slate-100">
-            <table className="w-full min-w-[760px] text-xs">
+            <table className="w-full min-w-[920px] text-xs">
               <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
                 <tr className="border-b border-slate-100 text-left text-[10px] uppercase tracking-wide text-slate-400">
+                  <th className="px-3 py-2.5">Employee</th>
                   <th className="px-3 py-2.5">Date</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Check-in</th>
@@ -185,6 +185,21 @@ export function AttendanceView({ user, people }: { user: SessionUser; people: Pe
                     onClick={() => setDetail(log)}
                     className="cursor-pointer border-b border-slate-50 transition-colors hover:bg-teal-50/40"
                   >
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-[150px]">
+                        <Avatar name={log.user.fullName} color={log.user.avatarColor} size="sm" src={avatarSrc(log.user)} />
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openProfile(log.user.id) }}
+                            className="block max-w-[150px] truncate text-left font-medium text-slate-700 hover:text-teal-700 hover:underline"
+                          >
+                            {log.user.fullName}
+                          </button>
+                          <p className="text-[10px] text-slate-400 tnum">{log.user.employeeCode}</p>
+                        </div>
+                      </div>
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       <p className="font-medium tnum text-slate-600">{dayLabel(log.dateKey)}</p>
                       <p className="text-[10px] text-slate-400">{weekdayLabel(log.dateKey)}</p>
@@ -255,7 +270,7 @@ function DetailBody({ log, canRequestReg, isHrCorrector, onCorrectionSaved, onRe
   return (
     <div className="space-y-4 p-5">
       <div className="flex items-center gap-3">
-        <Avatar name={log.user.fullName} color={log.user.avatarColor} />
+        <Avatar name={log.user.fullName} color={log.user.avatarColor} src={avatarSrc(log.user)} />
         <div className="min-w-0">
           <button
             onClick={() => openProfile(log.user.id)}

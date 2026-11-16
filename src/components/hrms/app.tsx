@@ -46,6 +46,13 @@ export function HRMSApp() {
     return () => window.removeEventListener('hrms:open-profile', handler)
   }, [])
 
+  const refreshMe = useCallback(async () => {
+    try {
+      const me = await api<{ user: SessionUser }>('/api/auth/me')
+      setUser((u) => (u ? { ...u, ...me.user } : me.user))
+    } catch { /* keep the current user */ }
+  }, [])
+
   const refreshNotifs = useCallback(async () => {
     try {
       const data = await api<{ items: Notif[]; unread: number }>('/api/notifications')
@@ -140,7 +147,7 @@ export function HRMSApp() {
       pendingApprovals={pendingApprovals}
     >
       {view === 'dashboard' && <DashboardView user={user} onGoRequests={() => setView('requests')} />}
-      {view === 'profile' && <MyProfileView userId={user.id} selfRole={user.role} />}
+      {view === 'profile' && <MyProfileView userId={user.id} selfRole={user.role} onSelfUpdated={refreshMe} />}
       {view === 'directory' && <DirectoryView user={user} people={people} initialOpenUserId={profileTarget} onPeopleChanged={reloadPeople} />}
       {view === 'org-chart' && <OrgChartView user={user} />}
       {view === 'attendance' && <AttendanceView user={user} people={people} />}

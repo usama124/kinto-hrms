@@ -20,7 +20,7 @@ export async function GET() {
       user: {
         id: user.id, email: user.email, fullName: user.fullName, role: user.role,
         employeeCode: user.employeeCode, designation: user.designation,
-        avatarColor: user.avatarColor, departmentName: user.department?.name ?? '—',
+        avatarColor: user.avatarColor, avatarUploadId: user.avatarUploadId, departmentName: user.department?.name ?? '—',
         teamName: user.team?.name ?? null,
         joiningDate: user.joiningDate, baseSalary: user.baseSalary,
         hrAllowance: user.hrAllowance, utilityAllowance: user.utilityAllowance,

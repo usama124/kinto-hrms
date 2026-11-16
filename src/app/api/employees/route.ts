@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { isOrgAdmin, isSysAdminGrantedRole, ROLES } from '@/lib/hrms/constants'
+import { isOrgAdmin, isSysAdminGrantedRole, ROLES, EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
+import { getDesignations, findDesignation } from '@/lib/hrms/designations'
 import { cleanText, cleanEmail, cleanNumber, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { visibleUserIds, canSeeCompensation } from '@/lib/hrms/rbac'
@@ -35,7 +36,7 @@ export async function GET() {
         id: u.id, fullName: u.fullName, email: u.email, role: u.role,
         employeeCode: u.employeeCode, designation: u.designation,
         departmentName: u.department?.name ?? '—', departmentId: u.departmentId,
-        joiningDate: u.joiningDate, avatarColor: u.avatarColor,
+        joiningDate: u.joiningDate, avatarColor: u.avatarColor, avatarUploadId: u.avatarUploadId,
         teamLead: u.teamLead?.fullName ?? null, manager: u.manager?.fullName ?? null,
         shiftName: u.shift?.name ?? null,
         // compensation only for the owner, HR/Admin and the accountant — never for a supervisor browsing their team
@@ -62,14 +63,20 @@ export async function POST(req: NextRequest) {
     const fullName = cleanText(body.fullName, 80)
     const email = cleanEmail(body.email)
     const role = String(body.role ?? ROLES.EMPLOYEE)
-    const designation = cleanText(body.designation, 80)
+    const designationInput = cleanText(body.designation, 80)
     const joiningDate = cleanDateKey(body.joiningDate)
 
-    if (!fullName || !email || !designation || !joiningDate) {
+    if (!fullName || !email || !designationInput || !joiningDate) {
       return fail('Full name, email, designation and joining date are required.', 422)
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Invalid email address.', 422)
     if (!CREATABLE_BY_ADMIN.includes(role)) return fail('Invalid role.', 422)
+    // designation must be one the company admin has defined — no free-text titles
+    const designation = findDesignation(await getDesignations(), designationInput)
+    if (!designation) return fail('Choose a designation from the company list. If it is missing, add it first under Rules & Settings → Org & Shifts.', 422)
+    if (body.employmentStatus !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(String(body.employmentStatus))) {
+      return fail(`Employment status must be one of: ${EMPLOYMENT_STATUSES.join(', ')}.`, 422)
+    }
     if (isSysAdminGrantedRole(role) && session.role !== ROLES.SUPER_ADMIN) {
       return fail('Forbidden: only the System Admin can create HR Manager / Accounts Head accounts.', 403)
     }
@@ -141,7 +148,7 @@ export async function POST(req: NextRequest) {
         managerId,
         shiftId,
         joiningDate: new Date(`${joiningDate}T00:00:00Z`),
-        employmentStatus: ['Permanent', 'Probation', 'Contract'].includes(String(body.employmentStatus)) ? String(body.employmentStatus) : 'Permanent',
+        employmentStatus: body.employmentStatus !== undefined ? String(body.employmentStatus) : 'Permanent',
         baseSalary: Math.max(0, cleanNumber(body.baseSalary, 0)),
         hrAllowance: Math.max(0, cleanNumber(body.hrAllowance, 0)),
         utilityAllowance: Math.max(0, cleanNumber(body.utilityAllowance, 0)),

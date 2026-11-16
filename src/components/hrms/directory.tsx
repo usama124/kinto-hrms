@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Users, UserPlus, Building2 } from 'lucide-react'
-import { api, ROLE_LABELS, type SessionUser, type PersonLite } from '@/lib/hrms/client'
+import { api, ROLE_LABELS, type SessionUser, type PersonLite, avatarSrc } from '@/lib/hrms/client'
 import { Avatar, GlassCard, Pill, EmptyState } from './shared'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -75,7 +75,7 @@ export function DirectoryView({ user, people, initialOpenUserId, onPeopleChanged
               className="text-left glass glass-hover p-4"
             >
               <div className="flex items-center gap-3">
-                <Avatar name={p.fullName} color={p.avatarColor} />
+                <Avatar name={p.fullName} color={p.avatarColor} src={avatarSrc(p)} />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-800 truncate">{p.fullName}</p>
                   <p className="text-[11px] text-slate-500 truncate">{p.designation}</p>

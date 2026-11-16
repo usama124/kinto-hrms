@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canAccessUser } from '@/lib/hrms/rbac'
-import { isOrgAdmin, isAccountsRole, isSysAdminGrantedRole, ROLES } from '@/lib/hrms/constants'
+import { isOrgAdmin, isAccountsRole, isSysAdminGrantedRole, ROLES, EMPLOYMENT_STATUSES } from '@/lib/hrms/constants'
+import { getDesignations, findDesignation } from '@/lib/hrms/designations'
 import { writeAuditDiff } from '@/lib/hrms/audit'
 import { revokeAllForUser } from '@/lib/hrms/tokens'
 
@@ -21,7 +22,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         manager: { select: { id: true, fullName: true, designation: true } },
         team: { select: { name: true } },
         shift: true,
-        directs: { select: { id: true, fullName: true, designation: true, avatarColor: true } },
+        directs: { select: { id: true, fullName: true, designation: true, avatarColor: true, avatarUploadId: true } },
       },
     })
     if (!u) return fail('Employee not found.', 404)
@@ -49,7 +50,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         departmentName: u.department?.name ?? '—', departmentId: u.departmentId,
         teamId: u.teamId, teamName: u.team?.name ?? null,
         joiningDate: u.joiningDate,
-        avatarColor: u.avatarColor, teamLead: u.teamLead, manager: u.manager,
+        avatarColor: u.avatarColor, avatarUploadId: u.avatarUploadId, teamLead: u.teamLead, manager: u.manager,
         shiftId: u.shiftId, shiftName: u.shift?.name ?? null, shiftTime: u.shift ? `${u.shift.startTime}–${u.shift.endTime}` : null,
         // personal
         fatherName: u.fatherName, motherName: u.motherName,
@@ -126,7 +127,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (body.designation !== undefined) {
       const v = String(body.designation ?? '').trim().slice(0, 80).replace(/<[^>]*>/g, '')
       if (!v) return fail('Designation cannot be empty.', 422)
-      next.designation = v
+      // unchanged titles (legacy / pre-list data) pass; any NEW title must exist in the company list
+      if (v.toLowerCase() !== u.designation.toLowerCase()) {
+        const canon = findDesignation(await getDesignations(), v)
+        if (!canon) return fail('Choose a designation from the company list. If it is missing, add it first under Rules & Settings → Org & Shifts.', 422)
+        next.designation = canon
+      }
     }
     if (body.role !== undefined) {
       const v = String(body.role)
@@ -204,7 +210,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     if (body.employmentStatus !== undefined) {
-      next.employmentStatus = ['Permanent', 'Probation', 'Contract'].includes(String(body.employmentStatus)) ? String(body.employmentStatus) : 'Permanent'
+      if (!(EMPLOYMENT_STATUSES as readonly string[]).includes(String(body.employmentStatus))) {
+        return fail(`Employment status must be one of: ${EMPLOYMENT_STATUSES.join(', ')}.`, 422)
+      }
+      next.employmentStatus = String(body.employmentStatus)
     }
     for (const f of ['baseSalary', 'hrAllowance', 'utilityAllowance']) {
       if (body[f] !== undefined) {
