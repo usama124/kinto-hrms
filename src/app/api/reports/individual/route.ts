@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canAccessUser, canSeeCompensation } from '@/lib/hrms/rbac'
 import { cleanDateKey } from '@/lib/hrms/sanitize'
-import { ROLES } from '@/lib/hrms/constants'
+import { isAccountsRole } from '@/lib/hrms/constants'
 import { addDaysKey, todayKey } from '@/lib/hrms/dates'
 
 const NON_WORKING = ['WEEKEND', 'HOLIDAY', 'DAY_OFF']
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
     if (!(await canAccessUser(session, userId))) return fail('Forbidden: you cannot view this employee’s report.', 403)
 
-    const accountant = session.role === ROLES.ACCOUNTANT
+    const accountant = isAccountsRole(session.role)
     // payroll section = compensation: owner / HR-Admin / accountant only (a supervisor gets attendance + leave)
     const sections = accountant ? ['payroll'] : canSeeCompensation(session, userId) ? ['attendance', 'leaves', 'payroll'] : ['attendance', 'leaves']
 

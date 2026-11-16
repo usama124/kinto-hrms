@@ -1,20 +1,20 @@
 import 'server-only'
 import { db } from '@/lib/db'
 import type { SessionPayload } from '@/lib/auth'
-import { ROLES, isOrgAdmin } from '@/lib/hrms/constants'
+import { ROLES, isOrgAdmin, isAccountsRole } from '@/lib/hrms/constants'
 
 /**
  * Zero-trust hierarchy scoping — repository-level query filter.
  *
  * SUPER_ADMIN / HR_MANAGER -> entire org
- * ACCOUNTANT               -> entire org (payroll context; module access gated per endpoint)
+ * ACCOUNTANT / ACCOUNTS_MANAGER -> entire org (payroll context; module access gated per endpoint)
  * MANAGER                  -> self + Team Leads reporting to them + employees under those leads
  * TEAM_LEAD                -> self + direct reports
  * EMPLOYEE                 -> self only
  */
 export async function visibleUserIds(session: SessionPayload): Promise<string[]> {
   const me = session.userId
-  if (session.role === ROLES.SUPER_ADMIN || session.role === ROLES.HR_MANAGER || session.role === ROLES.ACCOUNTANT) {
+  if (session.role === ROLES.SUPER_ADMIN || session.role === ROLES.HR_MANAGER || isAccountsRole(session.role)) {
     const users = await db.user.findMany({ where: { isActive: true }, select: { id: true } })
     return users.map((u) => u.id)
   }
@@ -47,7 +47,7 @@ export async function canAccessUser(session: SessionPayload, targetId: string): 
 
 /** May this session read this person's compensation (salary components, bank details, payslips)? */
 export function canSeeCompensation(session: SessionPayload, targetId: string): boolean {
-  return session.userId === targetId || isOrgAdmin(session.role) || session.role === ROLES.ACCOUNTANT
+  return session.userId === targetId || isOrgAdmin(session.role) || isAccountsRole(session.role)
 }
 
 // ─── Approval authority (approver-id based, hierarchy enforced) ───────────────

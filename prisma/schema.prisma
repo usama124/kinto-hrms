@@ -115,6 +115,9 @@ model User {
   bankIban         String?
   isActive         Boolean  @default(true)
 
+  // Set when an admin issues a temporary password; every feature endpoint stays locked (403) until the user picks their own
+  mustChangePassword Boolean @default(false)
+
   // MFA & anti-abuse
   mfaEnabled     Boolean @default(false)
   mfaSecret      String? // base32

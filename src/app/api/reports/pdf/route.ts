@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     if (type === 'org-attendance') {
       if (!isOrgAdmin(session.role)) return fail('Forbidden: org-wide reports are Admin / HR only.', 403)
       const ids = await visibleUserIds(session)
-      const users = await db.user.findMany({ where: { id: { in: ids }, role: { not: ROLES.ACCOUNTANT } }, include: { department: true } })
+      const users = await db.user.findMany({ where: { id: { in: ids }, role: { notIn: [ROLES.ACCOUNTANT, ROLES.ACCOUNTS_MANAGER] } }, include: { department: true } })
       const logs = await db.attendanceLog.findMany({ where: { userId: { in: users.map((u) => u.id) }, dateKey: { gte: from, lte: to } } })
       const sched = logs.filter((l) => !NON_WORKING.includes(l.status) && l.expectedMinutes > 0)
       const attended = sched.filter((l) => ATTENDED.includes(l.status))

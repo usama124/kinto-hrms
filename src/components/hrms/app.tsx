@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { api, type SessionUser, type PersonLite, type Notif } from '@/lib/hrms/client'
 import { LoginView } from './login'
 import { MfaGate } from './mfa-gate'
+import { PasswordGate } from './change-password'
 import { Shell, type ViewKey } from './shell'
 import { DashboardView } from './dashboard'
 import { MyProfileView } from './my-profile'
@@ -84,9 +85,18 @@ export function HRMSApp() {
     setView('dashboard')
   }
 
+  // The server refuses feature endpoints (403) while a gate is pending, so the data that login/boot tried to
+  // load is empty at that point — reload it once the gate clears.
+  function reloadAfterGate() {
+    void reloadPeople()
+    void refreshNotifs()
+    void refreshDashboardBadge()
+  }
+
   function handleMfaDone() {
     if (!user) return
     setUser({ ...user, mfaEnabled: true, mfaRequired: true })
+    reloadAfterGate()
   }
 
   async function handleLogout() {
@@ -107,6 +117,11 @@ export function HRMSApp() {
   }
 
   if (!user) return <LoginView onLogin={handleLogin} />
+
+  // Admin-issued temporary password must be replaced before anything else (server refuses every API call until then)
+  if (user.mustChangePassword) {
+    return <PasswordGate fullName={user.fullName} onDone={() => { setUser({ ...user, mustChangePassword: false }); reloadAfterGate() }} onLogout={handleLogout} />
+  }
 
   // Mandatory TOTP enrollment before the workspace opens
   if (user.mfaRequired && !user.mfaEnabled) {

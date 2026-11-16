@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail, HttpError } from '@/lib/hrms/api-utils'
 import { visibleUserIds, initialStageOf, hrStageRole } from '@/lib/hrms/rbac'
 import { validateRequest } from '@/lib/hrms/policy'
-import { ROLES, REQUEST_TYPES, isOversightOnly, PENDING_STATUSES } from '@/lib/hrms/constants'
+import { ROLES, REQUEST_TYPES, PENDING_STATUSES, isAccountsRole } from '@/lib/hrms/constants'
+import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
 import { dateTimeFor } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
@@ -12,7 +13,7 @@ import { writeAudit } from '@/lib/hrms/audit'
 export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
-    if (session.role === ROLES.ACCOUNTANT) return fail('Forbidden: Accountants cannot access the requests module.', 403)
+    if (isAccountsRole(session.role)) return fail('Forbidden: the accounts team cannot access the requests module.', 403)
 
     const qp = req.nextUrl.searchParams
     const type = qp.get('type') // LEAVE | OFFICIAL_DUTY | TRAVEL | null=all
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
         ...(status ? { status } : {}),
       },
       include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true } },
+        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true } },
         leaveType: { select: { id: true, name: true, colorCode: true } },
         attachment: { select: { id: true, name: true, mime: true } },
         approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
@@ -48,10 +49,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
-    if (session.role === ROLES.ACCOUNTANT) return fail('Forbidden: Accountants cannot create requests.', 403)
-    if (isOversightOnly(session.role)) {
-      return fail('System Admin is an oversight role — personal leave requests are disabled.', 403)
-    }
+    if (isAccountsRole(session.role)) return fail('Forbidden: the accounts team cannot create requests.', 403)
 
     const body = await req.json().catch(() => null)
     if (!body) return fail('Invalid payload.', 422)
@@ -74,12 +72,13 @@ export async function POST(req: NextRequest) {
     if (!cleanDateKey(input.endDate)) return fail('Valid end date required (YYYY-MM-DD).', 422)
     if (!Number.isFinite(input.shortHours)) return fail('shortHours must be a number.', 422)
 
-    const result = await validateRequest(targetUserId, input)
-    if (!result.ok) return fail(result.error, result.code)
-
     const requester = await db.user.findUnique({ where: { id: targetUserId } })
     if (!requester) return fail('Requester not found.', 404)
-    if (isOversightOnly(requester.role)) return fail('System Admin cannot have personal leave requests.', 403)
+    // accounts that never had balances provisioned (System Admin) or a new year: create them before the quota gate runs
+    await ensureLeaveBalances(targetUserId, Number(input.startDate.slice(0, 4)))
+
+    const result = await validateRequest(targetUserId, input)
+    if (!result.ok) return fail(result.error, result.code)
 
     // Chain-aware initial stage: TL → Manager → HR fallback
     const first = initialStageOf('LEAVE', requester)

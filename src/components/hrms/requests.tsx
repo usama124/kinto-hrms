@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // ─── Local helpers ────────────────────────────────────────────────────────────
 
 const PENDING_STATUSES = ['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR']
-const CREATE_ROLES = ['TEAM_LEAD', 'MANAGER', 'EMPLOYEE', 'HR_MANAGER']
+const CREATE_ROLES = ['TEAM_LEAD', 'MANAGER', 'EMPLOYEE', 'HR_MANAGER', 'SUPER_ADMIN']
 const TYPE_TONE: Record<string, string> = { LEAVE: 'teal', OFFICIAL_DUTY: 'purple', TRAVEL: 'cyan' }
 
 function openProfile(userId: string) {
@@ -94,7 +94,6 @@ export function RequestsView({ user, people, onApproved }: {
   }, [])
 
   const loadBalances = useCallback(async () => {
-    if (user.role === 'SUPER_ADMIN') { setBalLoading(false); return } // oversight-only: no personal balances
     setBalLoading(true)
     try {
       const res = await api<{ balances: Balance[] }>('/api/leave-balances')
@@ -110,15 +109,20 @@ export function RequestsView({ user, people, onApproved }: {
 
   const toggle = (key: string) => setExpanded((e) => ({ ...e, [key]: !e[key] }))
 
+  // Mirrors the server rule (rbac.ts): an HR Manager's / System Admin's request is decided by the System Admin only,
+  // and nobody else acts on their own request.
+  const rowLocked = (r: { userId: string; user: { role?: string } }) =>
+    r.user.role === 'HR_MANAGER' || r.user.role === 'SUPER_ADMIN' ? user.role !== 'SUPER_ADMIN' : r.userId === user.id
+
   const canActLeave = (r: RequestRow) => {
-    if (!PENDING_STATUSES.includes(r.status)) return false
+    if (!PENDING_STATUSES.includes(r.status) || rowLocked(r)) return false
     if (user.role === 'TEAM_LEAD') return r.currentStage === 'TEAM_LEAD'
     if (user.role === 'MANAGER') return r.currentStage === 'MANAGER'
     return isFastTrack // SUPER_ADMIN / HR_MANAGER fast-track any pending stage
   }
 
   const canActAtt = (r: AttRequestRow) => {
-    if (!PENDING_STATUSES.includes(r.status)) return false
+    if (!PENDING_STATUSES.includes(r.status) || rowLocked(r)) return false
     if (user.role === 'TEAM_LEAD') return r.currentStage === 'TEAM_LEAD'
     if (user.role === 'MANAGER') return r.currentStage === 'MANAGER'
     return isFastTrack

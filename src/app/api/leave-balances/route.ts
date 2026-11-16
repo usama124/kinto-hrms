@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canAccessUser } from '@/lib/hrms/rbac'
 import { todayKey } from '@/lib/hrms/dates'
+import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
 
 /** Real-time leave balance table (Carry Forward, Availed, Pending, Lapsed, Available). */
 export async function GET(req: NextRequest) {
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
     if (!(await canAccessUser(session, userId))) return fail('Forbidden: you cannot view this employee’s balances.', 403)
 
     const year = Number(todayKey().slice(0, 4))
+    await ensureLeaveBalances(userId, year) // provisions missing rows (System Admin, new year)
     const balances = await db.leaveBalance.findMany({
       where: { userId, year },
       include: { leaveType: true },

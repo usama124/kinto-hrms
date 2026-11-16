@@ -20,8 +20,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 export type ViewKey = 'dashboard' | 'profile' | 'directory' | 'org-chart' | 'attendance' | 'requests' | 'payroll' | 'reports' | 'rules'
 
-const ALL_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER', 'TEAM_LEAD', 'EMPLOYEE']
-const NON_EMPLOYEE = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER', 'TEAM_LEAD']
+const ALL_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'MANAGER', 'TEAM_LEAD', 'EMPLOYEE']
+const NON_EMPLOYEE = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'MANAGER', 'TEAM_LEAD']
 
 export const NAV: { key: ViewKey; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[] }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ALL_ROLES },
@@ -30,7 +30,7 @@ export const NAV: { key: ViewKey; label: string; icon: React.ComponentType<{ cla
   { key: 'org-chart', label: 'Org Chart', icon: Network, roles: NON_EMPLOYEE },
   { key: 'attendance', label: 'Attendance', icon: CalendarClock, roles: ALL_ROLES },
   { key: 'requests', label: 'Requests', icon: Inbox, roles: ALL_ROLES },
-  { key: 'payroll', label: 'Payroll', icon: Wallet, roles: ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT'] },
+  { key: 'payroll', label: 'Payroll', icon: Wallet, roles: ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER'] },
   { key: 'reports', label: 'Reports', icon: PieChart, roles: NON_EMPLOYEE },
   { key: 'rules', label: 'Rules & Settings', icon: SlidersHorizontal, roles: ['SUPER_ADMIN', 'HR_MANAGER'] },
 ]

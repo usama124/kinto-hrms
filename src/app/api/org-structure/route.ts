@@ -28,7 +28,7 @@ export async function GET() {
       },
       orderBy: { name: 'asc' },
     })
-    const leads = await db.user.findMany({ where: { role: { in: ['MANAGER', 'TEAM_LEAD', 'HR_MANAGER', 'ACCOUNTANT'] }, isActive: true }, select: { id: true, fullName: true, role: true } })
+    const leads = await db.user.findMany({ where: { role: { in: ['MANAGER', 'TEAM_LEAD', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER'] }, isActive: true }, select: { id: true, fullName: true, role: true } })
     const unassigned = await db.user.findMany({
       where: { departmentId: null, isActive: true },
       select: personSelect,

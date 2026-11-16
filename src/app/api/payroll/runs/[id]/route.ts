@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   return guard(async () => {
     const session = await requireSession()
-    if (!isPayrollOperator(session.role)) return fail('Forbidden: only the Accountant or System Admin can discard payroll runs.', 403)
+    if (!isPayrollOperator(session.role)) return fail('Forbidden: only the accounts team or System Admin can discard payroll runs.', 403)
     const { id } = await ctx.params
     const run = await db.payrollRun.findUnique({ where: { id } })
     if (!run) return fail('Payroll run not found.', 404)

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { isOversightOnly, UPLOAD_DIR, MAX_UPLOAD_BYTES, ALLOWED_MIME } from '@/lib/hrms/constants'
+import { UPLOAD_DIR, MAX_UPLOAD_BYTES, ALLOWED_MIME } from '@/lib/hrms/constants'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -16,8 +16,7 @@ import { cleanText } from '@/lib/hrms/sanitize'
  */
 export async function POST(req: NextRequest) {
   return guard(async () => {
-    const session = await requireSession()
-    if (isOversightOnly(session.role)) return fail('Forbidden.', 403)
+    const session = await requireSession() // every role may attach a document to their own leave request
     const rl = guardRate(req, 'upload', RATE_LIMITS.UPLOAD.max, RATE_LIMITS.UPLOAD.windowMs)
     if (!rl.ok) return fail(`Too many uploads. Retry after ${rl.retryAfterSec}s.`, 429)
 

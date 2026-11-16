@@ -309,7 +309,9 @@ function SalaryEditor({ people }: { people: PersonLite[] }) {
 type RunDetail = PayrollRunV2 & { payslips: PayslipV2[] }
 
 function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] }) {
-  const isOperator = user.role === 'SUPER_ADMIN' || user.role === 'ACCOUNTANT'
+  const isOperator = user.role === 'SUPER_ADMIN' || user.role === 'ACCOUNTANT' || user.role === 'ACCOUNTS_MANAGER'
+  // only the Accounts Head / Manager may lock a run (server enforces the same rule)
+  const canFinalize = user.role === 'ACCOUNTS_MANAGER'
   const [runs, setRuns] = useState<PayrollRunV2[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -480,7 +482,7 @@ function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] 
                     <td className="px-3 py-2 text-slate-500 truncate max-w-[140px]">{r.createdBy?.fullName ?? '—'}</td>
                     <td className="px-3 py-2 tnum text-slate-500">{r.finalizedAt ? dateTimeLabel(r.finalizedAt) : '—'}</td>
                     <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                      {isOperator && r.status === 'DRAFT' && (
+                      {canFinalize && r.status === 'DRAFT' && (
                         <Button size="sm" variant="outline" onClick={() => setPendingFinalize(r)} className="h-7 px-2 text-[11px] border-amber-200 text-amber-700 hover:bg-amber-50">
                           <Lock className="h-3 w-3" />
                         </Button>
@@ -523,9 +525,11 @@ function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] 
                       <Button size="sm" variant="outline" onClick={() => void discardDraft(detail)} className="h-8 text-xs border-rose-200 text-rose-700 hover:bg-rose-50">
                         Discard draft
                       </Button>
-                      <Button size="sm" onClick={() => setPendingFinalize(detail)} className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white">
-                        <Lock className="h-3.5 w-3.5 mr-1" /> Finalize
-                      </Button>
+                      {canFinalize && (
+                        <Button size="sm" onClick={() => setPendingFinalize(detail)} className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white">
+                          <Lock className="h-3.5 w-3.5 mr-1" /> Finalize
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -654,7 +658,7 @@ function PayrollOps({ user, people }: { user: SessionUser; people: PersonLite[] 
 
 export function PayrollView({ user, people }: { user: SessionUser; people: PersonLite[] }) {
   const isOrgAdmin = user.role === 'SUPER_ADMIN' || user.role === 'HR_MANAGER'
-  const isPayrollOperator = user.role === 'SUPER_ADMIN' || user.role === 'ACCOUNTANT'
+  const isPayrollOperator = user.role === 'SUPER_ADMIN' || user.role === 'ACCOUNTANT' || user.role === 'ACCOUNTS_MANAGER'
   if (!isOrgAdmin && !isPayrollOperator) return <MyPayslips user={user} />
   return <PayrollOps user={user} people={people} />
 }

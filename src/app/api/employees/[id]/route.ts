@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { canAccessUser } from '@/lib/hrms/rbac'
-import { isOrgAdmin, ROLES } from '@/lib/hrms/constants'
+import { isOrgAdmin, isAccountsRole, isSysAdminGrantedRole, ROLES } from '@/lib/hrms/constants'
 import { writeAuditDiff } from '@/lib/hrms/audit'
 import { revokeAllForUser } from '@/lib/hrms/tokens'
 
@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     })
 
     // Salary fields are only serialized for the owner, org admins and the accountant
-    const canSeeSalary = session.userId === id || isOrgAdmin(session.role) || session.role === ROLES.ACCOUNTANT
+    const canSeeSalary = session.userId === id || isOrgAdmin(session.role) || isAccountsRole(session.role)
 
     const completionFields = [
       u.designation, u.departmentId, u.teamLeadId, u.managerId, u.shiftId,
@@ -130,9 +130,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     if (body.role !== undefined) {
       const v = String(body.role)
-      if (!['EMPLOYEE', 'TEAM_LEAD', 'MANAGER', 'ACCOUNTANT', 'HR_MANAGER'].includes(v)) return fail('Invalid role.', 422)
-      if (v === 'HR_MANAGER' && session.role !== 'SUPER_ADMIN') {
-        return fail('Forbidden: only the System Admin can grant the HR Manager role.', 403)
+      if (!['EMPLOYEE', 'TEAM_LEAD', 'MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'HR_MANAGER'].includes(v)) return fail('Invalid role.', 422)
+      if (isSysAdminGrantedRole(v) && session.role !== 'SUPER_ADMIN') {
+        return fail('Forbidden: only the System Admin can grant the HR Manager / Accounts Head roles.', 403)
+      }
+      // demoting an HR Manager / Accounts Head is just as sensitive as granting the role
+      if (isSysAdminGrantedRole(u.role) && v !== u.role && session.role !== 'SUPER_ADMIN') {
+        return fail('Forbidden: only the System Admin can change an HR Manager / Accounts Head role.', 403)
       }
       next.role = v
     }

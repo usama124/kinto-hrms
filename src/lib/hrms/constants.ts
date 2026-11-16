@@ -4,6 +4,7 @@ export const ROLES = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   HR_MANAGER: 'HR_MANAGER',
   ACCOUNTANT: 'ACCOUNTANT',
+  ACCOUNTS_MANAGER: 'ACCOUNTS_MANAGER',
   MANAGER: 'MANAGER',
   TEAM_LEAD: 'TEAM_LEAD',
   EMPLOYEE: 'EMPLOYEE',
@@ -14,6 +15,7 @@ export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'System Admin',
   HR_MANAGER: 'HR Manager',
   ACCOUNTANT: 'Accountant',
+  ACCOUNTS_MANAGER: 'Accounts Head / Manager',
   MANAGER: 'Manager',
   TEAM_LEAD: 'Team Lead',
   EMPLOYEE: 'Employee',
@@ -24,16 +26,28 @@ export const ORG_ADMIN_ROLES: string[] = [ROLES.SUPER_ADMIN, ROLES.HR_MANAGER]
 export function isOrgAdmin(role: string): boolean {
   return ORG_ADMIN_ROLES.includes(role)
 }
-/** Payroll operators. */
+/** Accounts department staff (Accountant + Accounts Head/Manager). */
+export function isAccountsRole(role: string): boolean {
+  return role === ROLES.ACCOUNTANT || role === ROLES.ACCOUNTS_MANAGER
+}
+/** Payroll operators: prepare runs, edit salary components, export. */
 export function isPayrollOperator(role: string): boolean {
-  return role === ROLES.SUPER_ADMIN || role === ROLES.ACCOUNTANT
+  return role === ROLES.SUPER_ADMIN || isAccountsRole(role)
+}
+/** Only the Accounts Head / Manager may FINALIZE (lock) payroll — not the Accountant, not the System Admin. */
+export function canFinalizePayroll(role: string): boolean {
+  return role === ROLES.ACCOUNTS_MANAGER
+}
+/** Roles only the System Admin may create or grant (they carry HR-wide or payroll-finalize authority). */
+export function isSysAdminGrantedRole(role: string): boolean {
+  return role === ROLES.HR_MANAGER || role === ROLES.ACCOUNTS_MANAGER
 }
 /** Roles for which TOTP MFA is mandatory (enforced at first login). */
-export const MFA_REQUIRED_ROLES: string[] = [ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.ACCOUNTANT, ROLES.MANAGER]
+export const MFA_REQUIRED_ROLES: string[] = [ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.ACCOUNTANT, ROLES.ACCOUNTS_MANAGER, ROLES.MANAGER]
 export function isMfaRequired(role: string): boolean {
   return MFA_REQUIRED_ROLES.includes(role)
 }
-/** SUPER_ADMIN is oversight-only: no personal attendance punching / leave creation. */
+/** SUPER_ADMIN is oversight-only for ATTENDANCE (no personal punching / regularization). Personal leave requests are allowed. */
 export function isOversightOnly(role: string): boolean {
   return role === ROLES.SUPER_ADMIN
 }

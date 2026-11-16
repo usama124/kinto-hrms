@@ -45,6 +45,7 @@ const ROLE_OPTIONS = [
   { value: 'TEAM_LEAD', label: 'Team Lead', adminOnly: false },
   { value: 'MANAGER', label: 'Manager', adminOnly: false },
   { value: 'ACCOUNTANT', label: 'Accountant', adminOnly: false },
+  { value: 'ACCOUNTS_MANAGER', label: 'Accounts Head / Manager (finalizes payroll)', adminOnly: true },
   { value: 'HR_MANAGER', label: 'HR Manager', adminOnly: true },
 ]
 

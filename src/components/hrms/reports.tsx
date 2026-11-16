@@ -166,7 +166,7 @@ function OrgAnalytics({ user }: { user: SessionUser }) {
           )}
         </div>
         <p className="mt-2 text-[10px] text-slate-400">
-          Org-wide PDF exports are restricted to System Admin / HR Manager. {user.role === 'ACCOUNTANT' ? 'Your payroll register PDF is available in the Payroll module.' : ''}
+          Org-wide PDF exports are restricted to System Admin / HR Manager. {(user.role === 'ACCOUNTANT' || user.role === 'ACCOUNTS_MANAGER') ? 'Your payroll register PDF is available in the Payroll module.' : ''}
         </p>
       </GlassCard>
 
@@ -627,7 +627,7 @@ function Individual360({ user, people }: { user: SessionUser; people: PersonLite
 
 // ─── Exported view ────────────────────────────────────────────────────────────
 
-const ORG_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER']
+const ORG_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'MANAGER']
 
 export function ReportsView({ user, people }: { user: SessionUser; people: PersonLite[] }) {
   const canSeeOrg = ORG_ROLES.includes(user.role)

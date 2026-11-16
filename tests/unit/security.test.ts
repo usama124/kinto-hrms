@@ -83,3 +83,20 @@ test('password policy + generated temp passwords satisfy it', () => {
   expect(passwordPolicyError('Str0ng!Passw0rd')).toBeNull()
   for (let i = 0; i < 50; i++) expect(passwordPolicyError(generateTempPassword())).toBeNull()
 })
+
+// ── payroll finalize authority / role grants ───────────────────────────────────
+const { canFinalizePayroll, isPayrollOperator, isAccountsRole, isSysAdminGrantedRole, isMfaRequired } = await import('@/lib/hrms/constants')
+test('only the Accounts Head / Manager can finalize payroll', () => {
+  expect(canFinalizePayroll('ACCOUNTS_MANAGER')).toBe(true)
+  for (const r of ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER', 'TEAM_LEAD', 'EMPLOYEE']) expect(canFinalizePayroll(r)).toBe(false)
+})
+test('accounts roles can prepare payroll; System Admin still can; HR cannot', () => {
+  for (const r of ['ACCOUNTS_MANAGER', 'ACCOUNTANT', 'SUPER_ADMIN']) expect(isPayrollOperator(r)).toBe(true)
+  expect(isPayrollOperator('HR_MANAGER')).toBe(false)
+  expect(isAccountsRole('ACCOUNTS_MANAGER') && isAccountsRole('ACCOUNTANT') && !isAccountsRole('HR_MANAGER')).toBe(true)
+})
+test('HR Manager and Accounts Head roles are System-Admin-granted and require MFA', () => {
+  expect(isSysAdminGrantedRole('HR_MANAGER') && isSysAdminGrantedRole('ACCOUNTS_MANAGER')).toBe(true)
+  expect(isSysAdminGrantedRole('ACCOUNTANT') || isSysAdminGrantedRole('MANAGER')).toBe(false)
+  expect(isMfaRequired('ACCOUNTS_MANAGER')).toBe(true)
+})

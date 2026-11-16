@@ -29,7 +29,7 @@ export async function GET() {
         shiftName: user.shift?.name ?? null,
         mfaEnabled: user.mfaEnabled,
         mfaRequired: isMfaRequired(user.role),
-        lockedUntil: user.lockedUntil,
+        mustChangePassword: user.mustChangePassword,
       },
     })
   })

@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         id: user.id, email: user.email, fullName: user.fullName, role: user.role,
         employeeCode: user.employeeCode, designation: user.designation,
         avatarColor: user.avatarColor, departmentName: user.department?.name ?? '—',
-        mfaEnabled: true,
+        mfaEnabled: true, mfaRequired: true, mustChangePassword: user.mustChangePassword,
       },
     }) as NextResponse
     await startSession(res, user, ip)

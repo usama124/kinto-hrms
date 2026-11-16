@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { EmployeeFormDialog } from './employee-form'
 
 export const ROLE_TONE: Record<string, string> = {
-  SUPER_ADMIN: 'rose', HR_MANAGER: 'violet', ACCOUNTANT: 'purple',
+  SUPER_ADMIN: 'rose', HR_MANAGER: 'violet', ACCOUNTANT: 'purple', ACCOUNTS_MANAGER: 'purple',
   MANAGER: 'orange', TEAM_LEAD: 'teal', EMPLOYEE: 'slate',
 }
 

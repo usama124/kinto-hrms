@@ -20,6 +20,8 @@ export type SessionPayload = {
   fid?: string
   /** derived from the DB on every request: elevated role that has not enrolled TOTP yet */
   mfaPending?: boolean
+  /** derived from the DB on every request: an admin-issued temporary password has not been replaced yet */
+  passwordChangePending?: boolean
 }
 
 // ─── Password hashing (scrypt, no external dep) ───────────────────────────────
@@ -41,8 +43,8 @@ export function verifyPassword(plain: string, stored: string): boolean {
 // ─── JWT session (15-minute access token) ─────────────────────────────────────
 
 export async function signSession(payload: SessionPayload, ttlSec: number = ACCESS_TTL_SEC): Promise<string> {
-  const { mfaPending: _ignored, ...claims } = payload // never trust a client-held flag; it is recomputed from the DB
-  void _ignored
+  const { mfaPending: _m, passwordChangePending: _p, ...claims } = payload // never trust client-held flags; they are recomputed from the DB
+  void _m; void _p
   return new SignJWT({ ...claims })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -99,7 +101,7 @@ export async function getSession(): Promise<SessionPayload | null> {
 
   const u = await db.user.findUnique({
     where: { id: claims.userId },
-    select: { isActive: true, role: true, email: true, fullName: true, mfaEnabled: true },
+    select: { isActive: true, role: true, email: true, fullName: true, mfaEnabled: true, mustChangePassword: true },
   })
   if (!u || !u.isActive) return null
   if (claims.fid) {
@@ -109,5 +111,6 @@ export async function getSession(): Promise<SessionPayload | null> {
   return {
     userId: claims.userId, email: u.email, fullName: u.fullName, role: u.role, fid: claims.fid,
     mfaPending: isMfaRequired(u.role) && !u.mfaEnabled,
+    passwordChangePending: u.mustChangePassword,
   }
 }

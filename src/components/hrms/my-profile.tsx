@@ -12,6 +12,7 @@ import { Avatar, GlassCard, KeyValue, Pill, SegmentedBar, SectionTitle, EmptySta
 import { Button } from '@/components/ui/button'
 import { EmployeeFormDialog } from './employee-form'
 import { ProfileSheet, ROLE_TONE } from './profile-sheet'
+import { ChangePasswordForm } from './change-password'
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
@@ -31,7 +32,8 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
   const [editOpen, setEditOpen] = useState(false)
   const [sheetUser, setSheetUser] = useState<string | null>(null)
 
-  const canEdit = selfRole === 'SUPER_ADMIN' || selfRole === 'HR_MANAGER'
+  // own profile: only the System Admin edits it (an HR Manager's record is changed by the System Admin — enforced server-side)
+  const canEdit = selfRole === 'SUPER_ADMIN'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -220,6 +222,12 @@ export function MyProfileView({ userId, selfRole }: { userId: string; selfRole: 
           </div>
         </GlassCard>
       )}
+
+      <GlassCard className="p-4">
+        <SectionTitle><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-teal-600" /> Security — change password</span></SectionTitle>
+        <p className="text-xs text-slate-500 mb-3">Changing your password signs you out of every other device.</p>
+        <div className="max-w-md"><ChangePasswordForm onDone={() => undefined} /></div>
+      </GlassCard>
 
       <div className="flex items-center gap-2 text-[11px] text-slate-400">
         <IdCard className="h-3.5 w-3.5" /> Your details are maintained by HR — requests for corrections go to your HR Manager.

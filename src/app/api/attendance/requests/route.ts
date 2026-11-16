@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { visibleUserIds, nextStageOf, hrStageRole } from '@/lib/hrms/rbac'
-import { ROLES, isOversightOnly, PENDING_STATUSES } from '@/lib/hrms/constants'
+import { ROLES, isOversightOnly, PENDING_STATUSES, isAccountsRole } from '@/lib/hrms/constants'
 import { dayKey, parseKey } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey, cleanHhmm } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
@@ -11,12 +11,12 @@ import { writeAudit } from '@/lib/hrms/audit'
 export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
-    if (session.role === ROLES.ACCOUNTANT) return fail('Forbidden.', 403)
+    if (isAccountsRole(session.role)) return fail('Forbidden.', 403)
     const ids = await visibleUserIds(session)
     const rows = await db.attendanceRequest.findMany({
       where: { userId: { in: ids } },
       include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true } },
+        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true } },
         approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
-    if (session.role === ROLES.ACCOUNTANT) return fail('Forbidden: Accountants cannot submit attendance requests.', 403)
+    if (isAccountsRole(session.role)) return fail('Forbidden: the accounts team cannot submit attendance requests.', 403)
     if (isOversightOnly(session.role)) return fail('System Admin is an oversight role — attendance regularization is disabled.', 403)
 
     const body = await req.json().catch(() => null)

@@ -19,6 +19,8 @@ export class HttpError extends Error {
 export async function requireSession(): Promise<SessionPayload> {
   const s = await getSession()
   if (!s) throw new HttpError(401, 'Not authenticated. Please sign in.')
+  // A temporary (admin-issued) password must be replaced first — server-side, not just the UI gate
+  if (s.passwordChangePending) throw new HttpError(403, 'You must change your temporary password before you can use the system.')
   // Elevated roles must finish TOTP enrollment before ANY feature endpoint works (server-side, not just the UI gate)
   if (s.mfaPending) throw new HttpError(403, 'Two-factor enrollment is required for your role before you can use the system.')
   return s

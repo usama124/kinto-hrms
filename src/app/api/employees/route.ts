@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { isOrgAdmin, ROLES } from '@/lib/hrms/constants'
+import { isOrgAdmin, isSysAdminGrantedRole, ROLES } from '@/lib/hrms/constants'
 import { cleanText, cleanEmail, cleanNumber, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { visibleUserIds, canSeeCompensation } from '@/lib/hrms/rbac'
@@ -11,7 +11,7 @@ import { clientIp } from '@/lib/hrms/rate-limit'
 import { todayKey } from '@/lib/hrms/dates'
 
 const CREATABLE_BY_HR = [ROLES.EMPLOYEE, ROLES.TEAM_LEAD, ROLES.MANAGER, ROLES.ACCOUNTANT]
-const CREATABLE_BY_ADMIN = [...CREATABLE_BY_HR, ROLES.HR_MANAGER]
+const CREATABLE_BY_ADMIN = [...CREATABLE_BY_HR, ROLES.HR_MANAGER, ROLES.ACCOUNTS_MANAGER]
 
 /**
  * GET /api/employees — people directory, RBAC-scoped (repo-level query scoping).
@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Invalid email address.', 422)
     if (!CREATABLE_BY_ADMIN.includes(role)) return fail('Invalid role.', 422)
-    if (role === ROLES.HR_MANAGER && session.role !== ROLES.SUPER_ADMIN) {
-      return fail('Forbidden: only the System Admin can create HR Manager accounts.', 403)
+    if (isSysAdminGrantedRole(role) && session.role !== ROLES.SUPER_ADMIN) {
+      return fail('Forbidden: only the System Admin can create HR Manager / Accounts Head accounts.', 403)
     }
 
     const emailExists = await db.user.findUnique({ where: { email }, select: { id: true } })
@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
       data: {
         email,
         passwordHash: hashPassword(password),
+        mustChangePassword: true, // HR/Admin knows this password, so the employee must replace it at first sign-in
         fullName,
         fatherName: cleanText(body.fatherName, 80) || null,
         motherName: cleanText(body.motherName, 80) || null,

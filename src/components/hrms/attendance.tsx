@@ -51,7 +51,7 @@ export function AttendanceView({ user, people }: { user: SessionUser; people: Pe
   const [reg, setReg] = useState<{ date: string } | null>(null)
 
   const canPick = user.role !== 'EMPLOYEE'
-  const canRequestReg = user.role !== 'SUPER_ADMIN' && user.role !== 'ACCOUNTANT'
+  const canRequestReg = user.role !== 'SUPER_ADMIN' && user.role !== 'ACCOUNTANT' && user.role !== 'ACCOUNTS_MANAGER'
   const isHrCorrector = user.role === 'SUPER_ADMIN' || user.role === 'HR_MANAGER'
 
   const options = useMemo(() => {

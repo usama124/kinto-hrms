@@ -79,6 +79,8 @@ export type SessionUser = {
   managerId?: string | null; managerName?: string | null
   shiftName?: string | null
   mfaEnabled?: boolean; mfaRequired?: boolean
+  /** admin-issued temporary password not yet replaced → the app shows the change-password gate */
+  mustChangePassword?: boolean
 }
 
 export type PersonLite = {
@@ -187,7 +189,7 @@ export type RequestRow = {
   dayCount: number; reason: string; attachmentId: string | null
   attachment?: { id: string; name: string; mime: string } | null
   status: string; currentStage: string; createdAt: string
-  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string }
+  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string }
   approvals: { id: string; level: string; action: string; comment: string | null; createdAt: string; approver: { fullName: string; role: string } }[]
 }
 
@@ -195,7 +197,7 @@ export type AttRequestRow = {
   id: string; userId: string; date: string
   requestedCheckIn: string; requestedCheckOut: string; reason: string
   status: string; currentStage: string; createdAt: string
-  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string }
+  user: { id: string; fullName: string; employeeCode: string; avatarColor: string; designation: string; role?: string }
   approvals: { id: string; level: string; action: string; comment: string | null; createdAt: string; approver: { fullName: string; role: string } }[]
 }
 

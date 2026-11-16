@@ -11,33 +11,24 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const DEMOS = [
-  { label: 'System Admin', email: 'admin@hrms.local', pw: 'Admin@123' },
-  { label: 'HR Manager', email: 'hr@hrms.local', pw: 'Hr@123' },
-  { label: 'Accountant', email: 'accountant@hrms.local', pw: 'Acc@123' },
-  { label: 'Manager', email: 'manager@hrms.local', pw: 'Mgr@123' },
-  { label: 'Team Lead', email: 'lead@hrms.local', pw: 'Lead@123' },
-  { label: 'Employee', email: 'employee@hrms.local', pw: 'Emp@123' },
-]
-
 type LoginResponse = { mfaRequired: boolean; mfaToken?: string; user?: SessionUser }
 
 export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
-  const [email, setEmail] = useState('hr@hrms.local')
-  const [password, setPassword] = useState('Hr@123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [mfaName, setMfaName] = useState('')
   const [code, setCode] = useState('')
   const [isBackup, setIsBackup] = useState(false)
 
-  async function submit(e?: React.FormEvent, creds?: { email: string; pw: string }) {
+  async function submit(e?: React.FormEvent) {
     e?.preventDefault()
     setBusy(true)
     try {
       const data = await api<LoginResponse>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email: creds?.email ?? email, password: creds?.pw ?? password }),
+        body: JSON.stringify({ email, password }),
       })
       if (data.mfaRequired && data.mfaToken) {
         setMfaToken(data.mfaToken)
@@ -98,10 +89,10 @@ export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
                 <Label htmlFor="code" className="text-xs text-slate-600">{isBackup ? 'Backup recovery code' : 'Authenticator code'}</Label>
                 <Input
                   id="code" value={code} onChange={(e) => setCode(e.target.value)} required autoFocus
-                  placeholder={isBackup ? 'XXXXX-XXXXX' : '123456'}
+                  placeholder={isBackup ? 'XXXX-XXXX-XXXX-XXXX' : '123456'}
                   className="bg-white/70 text-center text-lg tracking-[0.4em] tnum font-semibold"
                   inputMode={isBackup ? 'text' : 'numeric'}
-                  maxLength={isBackup ? 11 : 6}
+                  maxLength={isBackup ? 24 : 6}
                 />
               </div>
               <Button type="submit" disabled={busy} className="w-full bg-teal-600 hover:bg-teal-700 text-white h-10">
@@ -121,7 +112,7 @@ export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
         ) : (
           <GlassCard strong className="p-6">
             <h2 className="text-base font-semibold text-slate-800">Sign in to your workspace</h2>
-            <p className="text-xs text-slate-500 mt-0.5 mb-5">Use a demo role below or your credentials. Elevated roles must enroll TOTP MFA at first login.</p>
+            <p className="text-xs text-slate-500 mt-0.5 mb-5">Sign in with your work email and password. Elevated roles must enroll TOTP MFA at first login.</p>
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs text-slate-600">Email</Label>
@@ -137,22 +128,6 @@ export function LoginView({ onLogin }: { onLogin: (u: SessionUser) => void }) {
               </Button>
             </form>
 
-            <div className="mt-5 border-t border-slate-200/70 pt-4">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Demo roles — one click</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DEMOS.map((d) => (
-                  <button
-                    key={d.email}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => { setEmail(d.email); setPassword(d.pw); submit(undefined, d) }}
-                    className="glass-subtle px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-white hover:text-teal-700 transition-colors disabled:opacity-50"
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </GlassCard>
         )}
 

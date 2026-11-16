@@ -20,7 +20,7 @@ export async function GET() {
     for (const r of rows) {
       try { map[r.key] = JSON.parse(r.value) } catch { map[r.key] = r.value }
     }
-    const privileged = ([ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.ACCOUNTANT] as string[]).includes(session.role)
+    const privileged = ([ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.ACCOUNTANT, ROLES.ACCOUNTS_MANAGER] as string[]).includes(session.role)
     if (!privileged) {
       // employees only see company identity
       return ok({ settings: { 'company.profile': map['company.profile'] ?? null } })

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
 import { cleanDateKey } from '@/lib/hrms/sanitize'
-import { ROLES, isOrgAdmin } from '@/lib/hrms/constants'
+import { ROLES, isOrgAdmin, isAccountsRole } from '@/lib/hrms/constants'
 import { addDaysKey, todayKey, monthsBetween, monthRangeKeys } from '@/lib/hrms/dates'
 
 const NON_WORKING = ['WEEKEND', 'HOLIDAY', 'DAY_OFF']
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (!from || !to) return fail('from / to must be valid YYYY-MM-DD dates.', 422)
     const departmentId = qp.get('departmentId')
 
-    const accountant = session.role === ROLES.ACCOUNTANT
+    const accountant = isAccountsRole(session.role)
     if (!isOrgAdmin(session.role) && !accountant) {
       return fail('Forbidden: organization-wide analytics is restricted to Admin / HR.', 403)
     }
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     const ids = await visibleUserIds(session)
     const users = await db.user.findMany({
-      where: { id: { in: ids }, role: { not: ROLES.ACCOUNTANT } },
+      where: { id: { in: ids }, role: { notIn: [ROLES.ACCOUNTANT, ROLES.ACCOUNTS_MANAGER] } },
       select: { id: true, departmentId: true, department: { select: { name: true } } },
     })
     const userDept = new Map(users.map((u) => [u.id, u.department?.name ?? '—']))

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     // Session fallback (SUPER_ADMIN / HR only, MFA enrolled)
     if (!deviceAuth.ok) {
       const session = await getSession()
-      const sessionAllowed = Boolean(session && !session.mfaPending && isOrgAdmin(session.role))
+      const sessionAllowed = Boolean(session && !session.mfaPending && !session.passwordChangePending && isOrgAdmin(session.role))
       if (!sessionAllowed) return fail(`Device rejected: ${deviceAuth.reason}`, 401)
     }
 

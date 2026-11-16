@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
-import { isPayrollOperator } from '@/lib/hrms/constants'
+import { canFinalizePayroll } from '@/lib/hrms/constants'
 import { pickShortConversionBalance } from '@/lib/hrms/payroll-v2'
 import { writeAudit } from '@/lib/hrms/audit'
 
@@ -14,8 +14,8 @@ import { writeAudit } from '@/lib/hrms/audit'
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   return guard(async () => {
     const session = await requireSession()
-    if (!isPayrollOperator(session.role)) {
-      return fail('Forbidden: Payroll module is restricted to Accountant and System Admin.', 403)
+    if (!canFinalizePayroll(session.role)) {
+      return fail('Forbidden: only the Accounts Head / Accounts Manager can finalize payroll.', 403)
     }
     const { id } = await ctx.params
     const run = await db.payrollRun.findUnique({ where: { id }, include: { payslips: true } })

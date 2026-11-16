@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (problem) return fail(problem, 422)
     if (next === current) return fail('New password must differ from the current one.', 422)
 
-    await db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(next), failedAttempts: 0, lockedUntil: null } })
+    await db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(next), failedAttempts: 0, lockedUntil: null, mustChangePassword: false } })
     await revokeAllForUser(user.id)
     await writeAudit({
       actorId: user.id, actorName: user.fullName, actorRole: user.role,

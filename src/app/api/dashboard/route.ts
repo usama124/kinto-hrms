@@ -3,8 +3,9 @@ import { db } from '@/lib/db'
 import { requireSession, guard, ok } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
 import { addDaysKey, todayKey, fmtDateKey, monthRangeKeys } from '@/lib/hrms/dates'
-import { ROLES, isOrgAdmin, isOversightOnly, WORKED_STATUS_SET, NON_WORKING_STATUSES } from '@/lib/hrms/constants'
+import { ROLES, isOrgAdmin, isOversightOnly, isAccountsRole, WORKED_STATUS_SET, NON_WORKING_STATUSES } from '@/lib/hrms/constants'
 import { departmentMatrix, rosterFor, computeStats } from '@/lib/hrms/org-stats'
+import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
 import { resolveShiftForUser } from '@/lib/hrms/attendance-engine'
 
 const SHORT_HOUR_SET: readonly string[] = ['PRESENT', 'SHORT_DURATION', 'WFH', 'SHORT_LEAVE']
@@ -59,11 +60,10 @@ export async function GET(req: NextRequest) {
     }
     const trend = buildTrend(from, to, byDay)
 
-    // leave summary (personal; SUPER_ADMIN has none)
+    // leave summary (personal; every role has leave balances, the System Admin included)
     const year = Number(todayKey().slice(0, 4))
-    const balances = isOversightOnly(session.role)
-      ? []
-      : await db.leaveBalance.findMany({ where: { userId: session.userId, year }, include: { leaveType: true } })
+    await ensureLeaveBalances(session.userId, year)
+    const balances = await db.leaveBalance.findMany({ where: { userId: session.userId, year }, include: { leaveType: true } })
     const leaveSummary = balances.map((b) => {
       const total = b.carryForward + b.leaveType.annualQuota
       return {
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
       shift: myShift,
       // shift resolves user → team → department (same order as resolveShiftForUser)
       canPunch: !isOversightOnly(session.role) && Boolean(me?.shiftId ?? me?.team?.shiftId ?? me?.department?.shiftId),
-      canCreateRequest: !isOversightOnly(session.role) && session.role !== ROLES.ACCOUNTANT,
+      canCreateRequest: !isAccountsRole(session.role),
       supervisors: { teamLead: me?.teamLead ?? null, manager: me?.manager ?? null },
     })
   })

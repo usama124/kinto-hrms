@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         id: user.id, email: user.email, fullName: user.fullName, role: user.role,
         employeeCode: user.employeeCode, designation: user.designation,
         avatarColor: user.avatarColor, departmentName: user.department?.name ?? '—',
-        mfaEnabled: user.mfaEnabled, mfaRequired: isMfaRequired(user.role),
+        mfaEnabled: user.mfaEnabled, mfaRequired: isMfaRequired(user.role), mustChangePassword: user.mustChangePassword,
       },
     }) as NextResponse
     res.cookies.set(ACCESS_COOKIE, access, accessCookieOptions)
