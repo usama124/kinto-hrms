@@ -5,6 +5,7 @@ import { isOrgAdmin } from '@/lib/hrms/constants'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { clientIp } from '@/lib/hrms/rate-limit'
+import { nameLike, sameName } from '@/lib/hrms/db-compat'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -24,7 +25,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const name = cleanText(body.name, 60)
       if (name.length < 2) return fail('Department name is required (at least 2 characters).', 422)
       if (name !== cur.name) {
-        if (await db.department.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, NOT: { id } }, select: { id: true } })) return fail('A department with this name already exists.', 409)
+        if ((await db.department.findMany({ where: { name: nameLike(name), NOT: { id } }, select: { name: true } })).some((d) => sameName(d.name, name))) return fail('A department with this name already exists.', 409)
         data.name = name
       }
     }

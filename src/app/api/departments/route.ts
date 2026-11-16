@@ -6,6 +6,7 @@ import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { clientIp } from '@/lib/hrms/rate-limit'
 import { departmentDto } from '@/lib/hrms/departments'
+import { nameLike, sameName } from '@/lib/hrms/db-compat'
 
 /** Departments with usage counts. Readable by everyone signed in (pickers need them). */
 export async function GET() {
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     const description = cleanText(body?.description, 300) || null
     if (name.length < 2) return fail('Department name is required (at least 2 characters).', 422)
     if (!/^[A-Z0-9]{2,10}$/.test(code)) return fail('Code must be 2–10 letters or digits (e.g., ENG).', 422)
-    if (await db.department.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } })) return fail('A department with this name already exists.', 409)
+    if ((await db.department.findMany({ where: { name: nameLike(name) }, select: { name: true } })).some((d) => sameName(d.name, name))) return fail('A department with this name already exists.', 409)
     if (await db.department.findUnique({ where: { code }, select: { id: true } })) return fail('A department with this code already exists.', 409)
 
     const created = await db.department.create({ data: { name, code, description, isActive: body?.isActive !== false } })

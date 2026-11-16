@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../../src/lib/db' // same DB_PROVIDER the app uses
 import { Client, DEMO_PASSWORD, DOMAIN, hashPassword } from './lib'
 
-export const db = new PrismaClient()
+export const db = sharedDb
 
 export const MFA_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'ACCOUNTS_MANAGER', 'MANAGER']
 export const ORG_ADMIN = ['SUPER_ADMIN', 'HR_MANAGER']

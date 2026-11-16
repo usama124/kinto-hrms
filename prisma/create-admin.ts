@@ -14,10 +14,10 @@
  * Flags can also be provided via env vars: ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME, ADMIN_CODE.
  * Password policy: min 10 chars, upper + lower + digit + symbol.
  */
-import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../src/lib/db' // honours DB_PROVIDER (postgres | turso)
 import { randomBytes, scryptSync } from 'crypto'
 
-const db = new PrismaClient()
+const db = sharedDb
 
 function parseArgs(): Record<string, string | undefined> {
   const out: Record<string, string> = {}

@@ -10,10 +10,11 @@
  *
  * Needs the company structure (departments + designations) to exist — create it in Rules & Settings → Designations first.
  */
-import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../src/lib/db' // honours DB_PROVIDER (postgres | turso)
+import { createManySkipDuplicates } from '../src/lib/hrms/db-compat'
 import { randomBytes, scryptSync } from 'crypto'
 
-const db = new PrismaClient()
+const db = sharedDb
 const APPLY = process.argv.includes('--apply')
 const PASSWORD = process.env.DUMMY_PASSWORD ?? 'Demo@12345'
 const DOMAIN = 'demo.hrms.local'
@@ -173,7 +174,7 @@ async function main() {
 
     // leave balances for the current year (all leave types)
     if (leaveTypes.length) {
-      await tx.leaveBalance.createMany({ data: created.flatMap((c) => leaveTypes.map((t) => ({ userId: c.id, leaveTypeId: t.id, year }))), skipDuplicates: true })
+      await createManySkipDuplicates(tx.leaveBalance as never, created.flatMap((c) => leaveTypes.map((t) => ({ userId: c.id, leaveTypeId: t.id, year }))))
     }
 
     // reporting lines — among the NEW demo people of the same department only (real accounts are never touched or re-parented)

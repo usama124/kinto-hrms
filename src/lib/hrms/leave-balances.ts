@@ -1,5 +1,6 @@
 import 'server-only'
 import { db } from '@/lib/db'
+import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
 
 /**
  * Make sure a user has a balance row for every leave type in `year` (idempotent: the
@@ -9,8 +10,5 @@ import { db } from '@/lib/db'
 export async function ensureLeaveBalances(userId: string, year: number): Promise<void> {
   const types = await db.leaveType.findMany({ select: { id: true } })
   if (!types.length) return
-  await db.leaveBalance.createMany({
-    data: types.map((t) => ({ userId, leaveTypeId: t.id, year })),
-    skipDuplicates: true,
-  })
+  await createManySkipDuplicates(db.leaveBalance as never, types.map((t) => ({ userId, leaveTypeId: t.id, year })))
 }

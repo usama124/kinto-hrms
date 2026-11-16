@@ -2,6 +2,7 @@ import 'server-only'
 import { createHmac, timingSafeEqual, createHash } from 'crypto'
 import { db } from '@/lib/db'
 import { applyPunches } from '@/lib/hrms/attendance-engine'
+import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
 
 /**
  * ZKTeco K50 / ADMS PUSH protocol ingestion.
@@ -161,7 +162,7 @@ export async function ingestPunches(
     : new Set<string>()
   const fresh = rows.filter((r) => !known.has(r.dedupHash))
   duplicates += rows.length - fresh.length
-  const created = fresh.length ? await db.biometricPunch.createMany({ data: fresh, skipDuplicates: true }) : { count: 0 }
+  const created = fresh.length ? await createManySkipDuplicates(db.biometricPunch as never, fresh) : { count: 0 }
   duplicates += fresh.length - created.count
 
   const result = fresh.length ? await applyPunches(fresh.map((r) => ({ pin: r.pin, ts: r.ts, status: r.status })), 'BIOMETRIC') : { days: 0 }

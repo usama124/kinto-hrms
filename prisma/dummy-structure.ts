@@ -16,10 +16,10 @@
  *    person as their team lead.
  *  - Accounts: the Accounts Manager leads the accounts team (or acts as team lead if there is no team), VP Accounts is the manager.
  */
-import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../src/lib/db' // honours DB_PROVIDER (postgres | turso)
 import { ancestorsOf } from '../src/lib/hrms/designation-tree'
 
-const db = new PrismaClient()
+const db = sharedDb
 const APPLY = process.argv.includes('--apply')
 const DOMAIN = '@demo.hrms.local'
 const ACCOUNTS_RE = /account|finance|payroll|audit/i

@@ -5,7 +5,8 @@ import { MFA_ROLES, ctx, demoUsers, pool } from './ctx'
 export async function phase1() {
   section('1. Sign-in as every demo account (credentials, MFA gate, enrolment)')
   const users = demoUsers()
-  check(users.length >= 90, `${users.length} demo accounts found (expected ≥ 90)`)
+  const MIN = Number(process.env.E2E_MIN_ACCOUNTS ?? 90) // a fresh database (e.g. Turso) has fewer demo people
+  check(users.length >= MIN, `${users.length} demo accounts found (expected ≥ ${MIN})`)
 
   await pool(users, 8, async (u) => {
     const c = new Client(u.email)
@@ -29,7 +30,9 @@ export async function phase1() {
       ctx.enrolled.add(u.id)
       const bad = await c.post('/api/auth/mfa/enroll-verify', { code: '000000' })
       check(bad.status === 422, `${u.email}: wrong enrolment code rejected`, `HTTP ${bad.status}`)
-      const ok = await c.post('/api/auth/mfa/enroll-verify', { code: totp(en.json.secret, -1) })
+      let ok = await c.post('/api/auth/mfa/enroll-verify', { code: totp(en.json.secret, -1) })
+      // offset -1 sits on the edge of the server's ±1 window: if the 30 s step rolled over mid-request, recompute once
+      if (ok.status === 422) ok = await c.post('/api/auth/mfa/enroll-verify', { code: totp(en.json.secret, -1) })
       if (!check(ok.status === 200, `${u.email}: enrolment confirmed with a live code`, JSON.stringify(ok.json))) return
     }
 

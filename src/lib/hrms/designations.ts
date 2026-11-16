@@ -1,5 +1,6 @@
 import 'server-only'
 import { db } from '@/lib/db'
+import { nameLike, sameName } from '@/lib/hrms/db-compat'
 
 /** Which company designation does an employee create/update refer to? Prefers the id; falls back to an exact (case-insensitive) name. */
 export type ResolvedDesignation = { id: string; name: string; departmentId: string; departmentName: string }
@@ -23,10 +24,10 @@ export async function resolveDesignation(input: {
   } else {
     const name = typeof input.designation === 'string' ? input.designation.trim() : ''
     if (!name) return { ok: false, error: 'A designation is required.' }
-    const matches = await db.designation.findMany({
-      where: { name: { equals: name, mode: 'insensitive' }, isActive: true, ...(input.departmentId ? { departmentId: input.departmentId } : {}) },
+    const matches = (await db.designation.findMany({
+      where: { name: nameLike(name), isActive: true, ...(input.departmentId ? { departmentId: input.departmentId } : {}) },
       include,
-    })
+    })).filter((m) => sameName(m.name, name))
     if (matches.length === 0) {
       return { ok: false, error: 'Choose a designation defined in Rules & Settings → Designations. If it is missing, an admin must add it under the right department first.' }
     }

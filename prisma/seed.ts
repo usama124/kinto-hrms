@@ -2,12 +2,12 @@
  * KINTO HRMS — seed for the upgraded dual-role, biometric, 3-tier architecture.
  * Run: bun prisma/seed.ts
  */
-import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../src/lib/db' // honours DB_PROVIDER (postgres | turso)
 import { randomBytes, randomUUID, scryptSync, createHash } from 'crypto'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 
-const db = new PrismaClient()
+const db = sharedDb
 
 // ─── deterministic RNG ────────────────────────────────────────────────────────
 let seedState = 778812

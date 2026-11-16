@@ -6,6 +6,7 @@ import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { clientIp } from '@/lib/hrms/rate-limit'
 import { todayKey } from '@/lib/hrms/dates'
+import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
 
 /** Add a leave type (Admin / HR). Every active employee immediately gets this year's balance row for it. */
 export async function POST(req: NextRequest) {
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     const created = await db.$transaction(async (tx) => {
       const lt = await tx.leaveType.create({ data: { name, code, annualQuota, colorCode, isPaid: body?.isPaid !== false, monthlyCap, attachmentThreshold } })
       const users = await tx.user.findMany({ where: { isActive: true }, select: { id: true } })
-      if (users.length) await tx.leaveBalance.createMany({ data: users.map((u) => ({ userId: u.id, leaveTypeId: lt.id, year })), skipDuplicates: true })
+      if (users.length) await createManySkipDuplicates(tx.leaveBalance as never, users.map((u) => ({ userId: u.id, leaveTypeId: lt.id, year })))
       return lt
     }, { timeout: 30_000 })
 

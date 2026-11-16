@@ -64,3 +64,7 @@ server.log
 *.db-journal
 .env.*
 !.env.example
+
+# generated Turso/libSQL Prisma schema + client (created by `bun run db:generate`)
+/prisma/turso/
+/src/generated/

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { ATT_STATUS } from '@/lib/hrms/constants'
 import { dayKey, dateTimeFor, eachDayKey } from '@/lib/hrms/dates'
 import { resolveShiftForUser, holidayKeysFor, isWorkingDay } from '@/lib/hrms/attendance-engine'
+import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
 
 /**
  * Materialize attendance rows for scheduled working days that have no punches:
@@ -74,7 +75,7 @@ export async function materializeAttendance(
     }
   }
 
-  const created = toCreate.length ? (await db.attendanceLog.createMany({ data: toCreate, skipDuplicates: true })).count : 0
+  const created = toCreate.length ? (await createManySkipDuplicates(db.attendanceLog as never, toCreate)).count : 0
   for (const u of toUpdate) {
     await db.attendanceLog.update({ where: { id: u.id }, data: { status: u.status, expectedMinutes: u.expectedMinutes, notes: 'Auto from approved request' } })
   }
