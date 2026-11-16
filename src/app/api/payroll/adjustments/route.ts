@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isPayrollOperator } from '@/lib/hrms/constants'
 import { cleanNumber, cleanText, cleanMonth } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** POST /api/payroll/adjustments — monthly bonus / arrears for a payslip. */
 export async function POST(req: NextRequest) {
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
 
     const bonus = Math.max(0, cleanNumber(body?.bonus, 0))
     const arrears = Math.max(0, cleanNumber(body?.arrears, 0))
+    if (bonus > 100_000_000 || arrears > 100_000_000) return fail('bonus / arrears must be at most 100,000,000.', 422)
     const note = cleanText(body?.note, 200)
 
     const upserted = await db.monthlyAdjustment.upsert({
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
       targetUserId: target.id, targetName: target.fullName,
       entityType: 'SALARY', entityId: `${userId}:${month}`,
       fieldName: 'bonus/arrears', oldValue: '—', newValue: `bonus=${bonus}, arrears=${arrears}`,
-      reason: note || 'Monthly payroll adjustment', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason: note || 'Monthly payroll adjustment', ipAddress: clientIp(req),
     })
 
     return ok({ adjustment: upserted })

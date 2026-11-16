@@ -9,6 +9,7 @@ import { notifyRole } from '@/lib/hrms/notify'
 import { dateTimeFor } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** Requests list — scoped by hierarchy, PENDING always on top (newest first), then APPROVED/REJECTED. */
 export async function GET(req: NextRequest) {
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
       targetUserId: requester.id, targetName: requester.fullName,
       entityType: 'REQUEST', entityId: created.id,
       reason: `${typeLabel(input.type)} request created (${result.dayCount} day(s))${targetUserId !== session.userId ? ` on behalf of ${requester.fullName}` : ''}`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
 
     return ok({ request: created }, { status: 201 })

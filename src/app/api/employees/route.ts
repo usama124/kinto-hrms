@@ -71,6 +71,11 @@ export async function POST(req: NextRequest) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Invalid email address.', 422)
     if (!CREATABLE_BY_ADMIN.includes(role)) return fail('Invalid role.', 422)
+    for (const f of ['baseSalary', 'hrAllowance', 'utilityAllowance']) {
+      if (body[f] === undefined || body[f] === '') continue
+      const n = Number(body[f])
+      if (body[f] === null || !Number.isFinite(n) || n < 0 || n > 100_000_000) return fail(`${f} must be a number between 0 and 100,000,000.`, 422)
+    }
     if (body.employmentStatus !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(String(body.employmentStatus))) {
       return fail(`Employment status must be one of: ${EMPLOYMENT_STATUSES.join(', ')}.`, 422)
     }

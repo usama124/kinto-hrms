@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { ROLES } from '@/lib/hrms/constants'
 import { cleanNumber, cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * Manual quota increment — SUPER_ADMIN only (logged in audit_logs).
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       entityType: 'LEAVE_QUOTA', entityId: bal.id,
       fieldName: `carryForward (${leaveType.name} ${year})`,
       oldValue: String(bal.carryForward), newValue: String(updated.carryForward),
-      reason, ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason, ipAddress: clientIp(req),
     })
     await db.notification.create({
       data: { userId: target.id, title: 'Leave quota updated', body: `${leaveType.name} quota adjusted by ${applied > 0 ? '+' : ''}${applied} day(s) by the System Admin.`, type: 'INFO' },

@@ -5,6 +5,7 @@ import { cleanDateKey } from '@/lib/hrms/sanitize'
 import { addDaysKey, daysBetweenInclusive, todayKey } from '@/lib/hrms/dates'
 import { materializeAttendance } from '@/lib/hrms/attendance-sync'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 const MAX_DAYS = 93
 
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'ATTENDANCE', reason: `Attendance sync ${from} → ${to}: ${result.created} created, ${result.updated} updated`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
     return ok({ from, to, ...result })
   })

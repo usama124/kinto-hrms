@@ -6,6 +6,7 @@ import { applyRegularizationToLog } from '@/lib/hrms/regularization'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { notifyRole } from '@/lib/hrms/notify'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * Approve a regularization request. Chain: TEAM_LEAD → MANAGER → HR; org admins fast-track.
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (claim.count === 0) return fail('This request was already actioned.', 409)
 
     await db.attendanceApproval.create({ data: { requestId: id, approverId: session.userId, level, action: 'APPROVED', comment } })
-    const ip = req.headers.get('x-forwarded-for') ?? null
+    const ip = clientIp(req)
     const actor = { userId: session.userId, fullName: session.fullName, role: session.role }
 
     if (next) {

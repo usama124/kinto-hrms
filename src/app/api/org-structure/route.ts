@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin } from '@/lib/hrms/constants'
 import { cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** GET — full org structure (departments → teams → members). Employees are excluded (403). */
 export async function GET() {
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
       await writeAudit({
         actorId: session.userId, actorName: session.fullName, actorRole: session.role,
         entityType: 'RULE', entityId: dept.id, fieldName: 'department', newValue: `${name} (${code})`,
-        reason: 'Department created', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        reason: 'Department created', ipAddress: clientIp(req),
       })
       return ok({ department: dept }, { status: 201 })
     }
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
       await writeAudit({
         actorId: session.userId, actorName: session.fullName, actorRole: session.role,
         entityType: 'RULE', entityId: team.id, fieldName: 'team', newValue: `${name} @ ${dept.name}`,
-        reason: 'Team created', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        reason: 'Team created', ipAddress: clientIp(req),
       })
       return ok({ team }, { status: 201 })
     }

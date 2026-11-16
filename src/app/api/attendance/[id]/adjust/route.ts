@@ -6,6 +6,7 @@ import { cleanHhmm, cleanText } from '@/lib/hrms/sanitize'
 import { resolveShiftForUser, computeFromPunches, holidayKeysFor } from '@/lib/hrms/attendance-engine'
 import { dayKey, dateTimeFor } from '@/lib/hrms/dates'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * Direct HR/Admin attendance correction (outside the 3-tier employee flow).
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         targetUserId: log.userId, targetName: log.user.fullName,
         entityType: 'ATTENDANCE', entityId: id,
         fieldName: c.fieldName, oldValue: c.oldValue, newValue: c.newValue,
-        reason, ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        reason, ipAddress: clientIp(req),
       })
     }
     await db.attendanceAudit.create({

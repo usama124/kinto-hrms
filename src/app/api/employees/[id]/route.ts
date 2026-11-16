@@ -6,6 +6,7 @@ import { isOrgAdmin, isAccountsRole, isSysAdminGrantedRole, ROLES, EMPLOYMENT_ST
 import { resolveDesignation } from '@/lib/hrms/designations'
 import { writeAuditDiff } from '@/lib/hrms/audit'
 import { revokeAllForUser } from '@/lib/hrms/tokens'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** Employee 360° metadata — strict access check (403 for outsiders). */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -237,7 +238,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     for (const f of ['baseSalary', 'hrAllowance', 'utilityAllowance']) {
       if (body[f] !== undefined) {
         const n = Number(body[f])
-        next[f] = Number.isFinite(n) ? Math.max(0, n) : 0
+        // never coerce garbage to 0 (that would silently wipe someone's pay) and never accept absurd magnitudes
+        if (body[f] === null || body[f] === '' || !Number.isFinite(n) || n < 0 || n > 100_000_000) return fail(`${f} must be a number between 0 and 100,000,000.`, 422)
+        next[f] = n
       }
     }
     if (body.isActive !== undefined) {
@@ -258,7 +261,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       targetUserId: u.id, targetName: u.fullName,
       entityType: 'USER', entityId: u.id,
-      reason: reason ?? 'Employee profile updated', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason: reason ?? 'Employee profile updated', ipAddress: clientIp(req),
     }, changes)
 
     // deactivating or changing role/e-mail → revoke every session of that employee immediately

@@ -120,6 +120,11 @@ export async function phase6() {
   status(await live.c.post('/api/auth/password', { currentPassword: e2.pw, newPassword: NEW_PW }), 200, 'throwaway employee set their own password')
   status(await client(manager).post(`/api/employees/${e2.id}/reset-password`, {}), 403, 'a manager cannot reset passwords')
   status(await HR.post(`/api/employees/${yasir.id}/reset-password`, {}), 422, 'you cannot reset your own password here')
+  for (const [bad, label] of [['abc', 'text'], [-5, 'negative'], [1e30, 'absurdly large'], [null, 'null']] as const) {
+    status(await HR.patch(`/api/employees/${e2.id}`, { baseSalary: bad }), 422, `salary ${label} is rejected, not coerced`)
+  }
+  const keep = await db.user.findUnique({ where: { id: e2.id }, select: { baseSalary: true } })
+  check(keep !== null, 'salary untouched after rejected edits')
   const rp = await HR.post(`/api/employees/${e2.id}/reset-password`, {})
   status(rp, 200, 'HR resets the employee\'s password')
   check(TEMP.test(rp.json.temporaryPassword) && rp.json.email === e2.email, 'a new random temporary password is returned once', JSON.stringify(rp.json))
@@ -131,6 +136,12 @@ export async function phase6() {
   status(hr2.res, 201, 'System Admin creates a second HR Manager')
   status(await HR.post(`/api/employees/${hr2.id}/reset-password`, {}), 403, 'HR cannot reset another HR Manager')
   status(await SA.post(`/api/employees/${hr2.id}/reset-password`, {}), 200, 'the System Admin can')
+  // HR must not be able to take over payroll roles by resetting their password
+  for (const role of ['ACCOUNTS_MANAGER', 'ACCOUNTANT']) {
+    const acct = userBy((u) => u.isDemo && u.role === role, role)
+    status(await HR.post(`/api/employees/${acct.id}/reset-password`, {}), 403, `HR cannot reset the password of an ${role}`)
+  }
+  HR.rotateIp() // the reset limiter is 5/min per IP
   status(await HR.post(`/api/employees/cl_missing0000000000000/reset-password`, {}), 404, 'unknown employee → 404')
 
   // deactivate → locked out at once

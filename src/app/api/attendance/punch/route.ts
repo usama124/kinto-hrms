@@ -5,6 +5,7 @@ import { isOversightOnly } from '@/lib/hrms/constants'
 import { resolveShiftForUser, computeFromPunches, holidayKeysFor, upsertLogFromComputed } from '@/lib/hrms/attendance-engine'
 import { dayKey } from '@/lib/hrms/dates'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * Self-service punch (Check-In / Check-Out).
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
       await db.biometricPunch.create({
         data: {
           pin: user.employeeCode, userId: user.id, ts: now, status: 0,
-          deviceSn: 'WEB', ip: req.headers.get('x-forwarded-for') ?? '127.0.0.1',
+          deviceSn: 'WEB', ip: clientIp(req),
           raw: `WEB punch IN`, dedupHash: `web-${user.id}-${now.toISOString()}`,
           processed: true,
         },
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
         targetUserId: user.id, targetName: user.fullName,
         entityType: 'ATTENDANCE', entityId: updated.id,
         fieldName: 'checkIn', oldValue: null, newValue: fmtHM(now),
-        reason: 'Self check-in', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        reason: 'Self check-in', ipAddress: clientIp(req),
       })
       return ok({ log: updated, checkedInAt: now })
     }
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       targetUserId: user.id, targetName: user.fullName,
       entityType: 'ATTENDANCE', entityId: log.id,
       fieldName: 'checkOut', oldValue: null, newValue: fmtHM(now),
-      reason: 'Self check-out', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason: 'Self check-out', ipAddress: clientIp(req),
     })
     return ok({ log: updated, checkedOutAt: now })
   })

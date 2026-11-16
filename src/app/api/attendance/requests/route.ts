@@ -7,6 +7,7 @@ import { dayKey, parseKey } from '@/lib/hrms/dates'
 import { cleanText, cleanDateKey, cleanHhmm } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
 import { notifyRole } from '@/lib/hrms/notify'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** GET — regularization queue scoped by hierarchy; PENDING always on top. */
 export async function GET(req: NextRequest) {
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       targetUserId: session.userId, targetName: requester.fullName,
       entityType: 'ATTENDANCE_REQUEST', entityId: created.id,
       reason: `Regularization requested for ${date} (${checkIn}–${checkOut})`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
 
     return ok({ request: created }, { status: 201 })

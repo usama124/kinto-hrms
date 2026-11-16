@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isPayrollOperator } from '@/lib/hrms/constants'
 import { cleanNumber, cleanText } from '@/lib/hrms/sanitize'
 import { writeAudit, writeAuditDiff } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * PATCH /api/payroll/salary — Accountant-only salary component edits.
@@ -42,7 +43,7 @@ export async function PATCH(req: NextRequest) {
         targetUserId: target.id, targetName: target.fullName,
         entityType: 'SALARY', entityId: target.id,
         reason: cleanText(body?.reason, 300) || 'Salary component update',
-        ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        ipAddress: clientIp(req),
       },
       [
         { fieldName: 'baseSalary', oldValue: target.baseSalary, newValue: patch.baseSalary ?? target.baseSalary },

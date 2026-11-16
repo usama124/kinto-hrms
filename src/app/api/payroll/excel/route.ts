@@ -6,6 +6,7 @@ import { payrollMasterSheet } from '@/lib/hrms/excel'
 import { monthLabel } from '@/lib/hrms/dates'
 import { writeAudit } from '@/lib/hrms/audit'
 import { cleanMonth } from '@/lib/hrms/sanitize'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * GET /api/payroll/excel?month=YYYY-MM — formatted .xlsx Payroll Master Sheet
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'PAYROLL', entityId: run.id,
       reason: `Excel master sheet exported for ${monthLabel(month)}`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
     return new Response(new Uint8Array(buf), {
       headers: {

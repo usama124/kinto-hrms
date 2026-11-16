@@ -7,6 +7,7 @@ import { monthLabel, monthRangeKeys, todayKey, addDaysKey } from '@/lib/hrms/dat
 import { materializeAttendance } from '@/lib/hrms/attendance-sync'
 import { writeAudit } from '@/lib/hrms/audit'
 import { cleanMonth } from '@/lib/hrms/sanitize'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** Payroll runs list (Accountant + System Admin; HR Manager read-only). */
 export async function GET() {
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'PAYROLL', entityId: run.id,
       reason: `Payroll run created for ${monthLabel(month)} (${calc.length} employees)`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
       meta: JSON.stringify({ month, employees: calc.length, gross: totals.gross, net: totals.net }),
     })
 

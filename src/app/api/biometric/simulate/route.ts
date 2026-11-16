@@ -7,6 +7,7 @@ import { dayKey, dateTimeFor, addDaysKey } from '@/lib/hrms/dates'
 import { isoWeekdayOf } from '@/lib/hrms/attendance-engine'
 import { parsePunchPayload, ingestPunches } from '@/lib/hrms/biometric'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /**
  * Admin/HR simulator — generates a realistic punch batch for the last working day
@@ -62,12 +63,12 @@ export async function POST(req: NextRequest) {
     if (!linesBuilt) return ok({ dateKey, generated: 0, message: 'No missing punches found for the target date — device data already complete.' })
 
     const parsed = parsePunchPayload(lines.join('\n'))
-    const result = await ingestPunches(parsed, 'CJ7T201660772', req.headers.get('x-forwarded-for') ?? null)
+    const result = await ingestPunches(parsed, 'CJ7T201660772', clientIp(req))
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'SECURITY', entityId: dateKey,
       reason: `Simulated ZKTeco K50 pull for ${dateKey}: ${result.stored} punches stored, ${result.daysRebuilt} day(s) rebuilt`,
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
     return ok({ dateKey, generated: linesBuilt, ...result })
   })

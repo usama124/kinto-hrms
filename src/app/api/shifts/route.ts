@@ -4,6 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { isOrgAdmin } from '@/lib/hrms/constants'
 import { cleanText, cleanNumber, cleanHhmm } from '@/lib/hrms/sanitize'
 import { writeAudit } from '@/lib/hrms/audit'
+import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** Shift templates — list for all, create/assign for Admin/HR. */
 export async function GET() {
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'SHIFT', entityId: shift.id,
       fieldName: 'shift', newValue: `${name} ${startTime}-${endTime}`,
-      reason: 'Shift template created', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      reason: 'Shift template created', ipAddress: clientIp(req),
     })
     return ok({ shift }, { status: 201 })
   })
@@ -81,7 +82,7 @@ export async function PATCH(req: NextRequest) {
         targetUserId: u.id, targetName: u.fullName,
         entityType: 'SHIFT', entityId: shiftId,
         fieldName: 'shiftId', oldValue: u.shiftId ?? 'none', newValue: shift.name,
-        reason: cleanText(body?.reason, 200) || 'Shift assignment', ipAddress: req.headers.get('x-forwarded-for') ?? null,
+        reason: cleanText(body?.reason, 200) || 'Shift assignment', ipAddress: clientIp(req),
       })
       return ok({ assigned: 'user' })
     }
@@ -95,7 +96,7 @@ export async function PATCH(req: NextRequest) {
       entityType: 'SHIFT', entityId: shiftId,
       fieldName: targetTeam ? 'team.shiftId' : 'department.shiftId',
       newValue: shift.name, reason: 'Shift assignment',
-      ipAddress: req.headers.get('x-forwarded-for') ?? null,
+      ipAddress: clientIp(req),
     })
     return ok({ assigned: targetTeam ? 'team' : 'department' })
   })

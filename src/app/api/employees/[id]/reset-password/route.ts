@@ -25,8 +25,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (id === session.userId) return fail('Use “Change password” in My Profile to change your own password.', 422)
     const target = await db.user.findUnique({ where: { id }, select: { id: true, fullName: true, email: true, role: true, isActive: true } })
     if (!target) return fail('Employee not found.', 404)
-    if ((target.role === ROLES.SUPER_ADMIN || target.role === ROLES.HR_MANAGER) && session.role !== ROLES.SUPER_ADMIN) {
-      return fail('Forbidden: only the System Admin can reset the password of an HR Manager or System Admin.', 403)
+    // Resetting a password = taking over the account. HR must not be able to take over anyone who holds
+    // privileged powers (payroll finalize/run, HR, admin): only the System Admin resets those.
+    if (session.role !== ROLES.SUPER_ADMIN && ([ROLES.SUPER_ADMIN, ROLES.HR_MANAGER, ROLES.ACCOUNTS_MANAGER, ROLES.ACCOUNTANT] as string[]).includes(target.role)) {
+      return fail('Forbidden: only the System Admin can reset the password of an HR Manager, Accounts role or System Admin.', 403)
     }
 
     const temporaryPassword = generateTempPassword()
