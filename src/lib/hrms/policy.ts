@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { DEFAULT_RULES, POLICY_KEYS, REQUEST_STATUS, PENDING_STATUSES } from '@/lib/hrms/constants'
 import { workingDaysBetween, parseKey, weekdayOf, daysBetweenInclusive, dayKey } from '@/lib/hrms/dates'
 import { availableDaysOf } from '@/lib/hrms/payroll'
+import { memo } from '@/lib/hrms/memo'
 
 export type Rules = {
   shiftDurationMinutes: number
@@ -17,7 +18,7 @@ export type Rules = {
 
 /** Load policy rules (service layer). Falls back to defaults for missing keys. */
 export async function getRules(): Promise<Rules> {
-  const rows = await db.policyRule.findMany()
+  const rows = await memo('policy.rules', () => db.policyRule.findMany())
   const map = new Map(rows.map((r) => [r.key, r.value]))
   const num = (k: string, dflt: number) => {
     const v = Number(map.get(DEFAULT_RULES[k]?.key ?? k) ?? DEFAULT_RULES[k]?.value)
@@ -37,7 +38,7 @@ export async function getRules(): Promise<Rules> {
 }
 
 export async function getHolidayKeys(year?: number): Promise<Set<string>> {
-  const rows = await db.holiday.findMany()
+  const rows = await memo('holidays', () => db.holiday.findMany())
   return new Set(rows.map((h) => h.date))
 }
 

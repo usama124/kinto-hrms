@@ -99,15 +99,20 @@ export async function getSession(): Promise<SessionPayload | null> {
   const claims = await verifySession(token)
   if (!claims) return null
 
-  const u = await db.user.findUnique({
-    where: { id: claims.userId },
-    select: { isActive: true, role: true, email: true, fullName: true, mfaEnabled: true, mustChangePassword: true },
-  })
-  if (!u || !u.isActive) return null
+  const userSelect = { isActive: true, role: true, email: true, fullName: true, mfaEnabled: true, mustChangePassword: true } as const
+  let u: { isActive: boolean; role: string; email: string; fullName: string; mfaEnabled: boolean; mustChangePassword: boolean } | null
   if (claims.fid) {
-    const live = await db.refreshToken.findFirst({ where: { familyId: claims.fid, revokedAt: null }, select: { id: true } })
-    if (!live) return null
+    // ONE round-trip for every API call: the live refresh-token family and the (active) user, joined — instead of two
+    // sequential queries. Same guarantees: a revoked family or a deactivated user is rejected immediately.
+    const live = await db.refreshToken.findFirst({
+      where: { familyId: claims.fid, revokedAt: null, userId: claims.userId },
+      select: { user: { select: userSelect } },
+    })
+    u = live?.user ?? null
+  } else {
+    u = await db.user.findUnique({ where: { id: claims.userId }, select: userSelect })
   }
+  if (!u || !u.isActive) return null
   return {
     userId: claims.userId, email: u.email, fullName: u.fullName, role: u.role, fid: claims.fid,
     mfaPending: isMfaRequired(u.role) && !u.mfaEnabled,

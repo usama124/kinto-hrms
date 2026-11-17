@@ -9,20 +9,23 @@ import { writeAudit } from '@/lib/hrms/audit'
 import { notifyRole } from '@/lib/hrms/notify'
 import { clientIp } from '@/lib/hrms/rate-limit'
 
+const HISTORY_LIMIT = 300 // decided requests returned per list call (pending ones are always all returned)
+
 /** GET — regularization queue scoped by hierarchy; PENDING always on top. */
 export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
     if (isAccountsRole(session.role)) return fail('Forbidden.', 403)
     const ids = await visibleUserIds(session)
-    const rows = await db.attendanceRequest.findMany({
-      where: { userId: { in: ids } },
-      include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
-        approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    const include = {
+      user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
+      approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' as const } },
+    }
+    // Bounded read: all pending + the latest HISTORY_LIMIT decided (was: the whole history on every open)
+    const rows = [
+      ...await db.attendanceRequest.findMany({ where: { userId: { in: ids }, status: { in: [...PENDING_STATUSES] } }, include, orderBy: { createdAt: 'desc' } }),
+      ...await db.attendanceRequest.findMany({ where: { userId: { in: ids }, status: { notIn: [...PENDING_STATUSES] } }, include, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT }),
+    ]
     const rank = (r: { status: string }) => (PENDING_STATUSES.includes(r.status) ? 0 : r.status === 'APPROVED' ? 1 : 2)
     const stageRank = (r: { currentStage: string }) => (r.currentStage === 'TEAM_LEAD' ? 0 : r.currentStage === 'MANAGER' ? 1 : r.currentStage === 'HR' ? 2 : 3)
     rows.sort((a, b) => rank(a) - rank(b) || stageRank(a) - stageRank(b) || b.createdAt.getTime() - a.createdAt.getTime())

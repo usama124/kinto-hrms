@@ -8,7 +8,13 @@ import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
  * never had balances provisioned (e.g. the System Admin) and the first request of a new year.
  */
 export async function ensureLeaveBalances(userId: string, year: number): Promise<void> {
-  const types = await db.leaveType.findMany({ select: { id: true } })
-  if (!types.length) return
-  await createManySkipDuplicates(db.leaveBalance as never, types.map((t) => ({ userId, leaveTypeId: t.id, year })))
+  // read first: this runs on every dashboard load, and the common case is "nothing to create" — so don't issue a write
+  const [types, have] = await Promise.all([
+    db.leaveType.findMany({ select: { id: true } }),
+    db.leaveBalance.findMany({ where: { userId, year }, select: { leaveTypeId: true } }),
+  ])
+  const owned = new Set(have.map((h) => h.leaveTypeId))
+  const missing = types.filter((t) => !owned.has(t.id))
+  if (!missing.length) return
+  await createManySkipDuplicates(db.leaveBalance as never, missing.map((t) => ({ userId, leaveTypeId: t.id, year })))
 }

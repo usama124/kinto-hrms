@@ -39,10 +39,20 @@ export async function visibleUserIds(session: SessionPayload): Promise<string[]>
   return [me]
 }
 
+/**
+ * Same rule as {@link visibleUserIds} for ONE target, answered with a single indexed lookup instead of loading the
+ * whole visible set (which for org-wide roles meant reading every active user on each call).
+ */
 export async function canAccessUser(session: SessionPayload, targetId: string): Promise<boolean> {
   if (targetId === session.userId) return true
-  const visible = await visibleUserIds(session)
-  return visible.includes(targetId)
+  const me = session.userId
+  let where: Record<string, unknown> | null
+  if (session.role === ROLES.SUPER_ADMIN || session.role === ROLES.HR_MANAGER || isAccountsRole(session.role)) where = {}
+  else if (session.role === ROLES.MANAGER) where = { OR: [{ managerId: me }, { teamLead: { is: { managerId: me, isActive: true } } }] }
+  else if (session.role === ROLES.TEAM_LEAD) where = { teamLeadId: me }
+  else where = null // EMPLOYEE: self only
+  if (!where) return false
+  return (await db.user.findFirst({ where: { id: targetId, isActive: true, ...where }, select: { id: true } })) !== null
 }
 
 /** May this session read this person's compensation (salary components, bank details, payslips)? */

@@ -12,6 +12,8 @@ import { writeAudit } from '@/lib/hrms/audit'
 import { clientIp } from '@/lib/hrms/rate-limit'
 
 /** Requests list — scoped by hierarchy, PENDING always on top (newest first), then APPROVED/REJECTED. */
+const HISTORY_LIMIT = 300 // decided requests returned per list call (pending ones are always all returned)
+
 export async function GET(req: NextRequest) {
   return guard(async () => {
     const session = await requireSession()
@@ -22,20 +24,21 @@ export async function GET(req: NextRequest) {
     const status = qp.get('status')
     const ids = await visibleUserIds(session)
 
-    const rows = await db.request.findMany({
-      where: {
-        userId: { in: ids },
-        ...(type ? { type } : {}),
-        ...(status ? { status } : {}),
-      },
-      include: {
-        user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
-        leaveType: { select: { id: true, name: true, colorCode: true } },
-        attachment: { select: { id: true, name: true, mime: true } },
-        approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    const include = {
+      user: { select: { id: true, fullName: true, employeeCode: true, avatarColor: true, designation: true, role: true, avatarUploadId: true } },
+      leaveType: { select: { id: true, name: true, colorCode: true } },
+      attachment: { select: { id: true, name: true, mime: true } },
+      approvals: { include: { approver: { select: { fullName: true, role: true } } }, orderBy: { createdAt: 'asc' as const } },
+    }
+    const base = { userId: { in: ids }, ...(type ? { type } : {}) }
+    // Bounded read: EVERY pending request (the work queue — naturally small) plus only the most recent HISTORY_LIMIT decided
+    // ones. This endpoint used to return the whole request history, with approval trails joined, on every open.
+    const rows = status
+      ? await db.request.findMany({ where: { ...base, status }, include, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT * 2 })
+      : [
+          ...await db.request.findMany({ where: { ...base, status: { in: [...PENDING_STATUSES] } }, include, orderBy: { createdAt: 'desc' } }),
+          ...await db.request.findMany({ where: { ...base, status: { notIn: [...PENDING_STATUSES] } }, include, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT }),
+        ]
 
     // Pending requests ALWAYS sort to the top (newest first), then APPROVED, then REJECTED
     const rank = (r: { status: string }) => (PENDING_STATUSES.includes(r.status) ? 0 : r.status === 'APPROVED' ? 1 : 2)

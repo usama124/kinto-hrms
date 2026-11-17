@@ -2,7 +2,7 @@ import 'server-only'
 import { db } from '@/lib/db'
 import { ATT_STATUS } from '@/lib/hrms/constants'
 import { dayKey, dateTimeFor, eachDayKey } from '@/lib/hrms/dates'
-import { resolveShiftForUser, holidayKeysFor, isWorkingDay } from '@/lib/hrms/attendance-engine'
+import { resolveShiftsForUsers, holidayKeysFor, isWorkingDay } from '@/lib/hrms/attendance-engine'
 import { createManySkipDuplicates } from '@/lib/hrms/db-compat'
 
 /**
@@ -55,8 +55,9 @@ export async function materializeAttendance(
   const toCreate: { userId: string; dateKey: string; status: string; expectedMinutes: number; source: string; notes: string }[] = []
   const toUpdate: { id: string; status: string; expectedMinutes: number }[] = []
 
+  const shifts = await resolveShiftsForUsers(users.map((u) => u.id))
   for (const u of users) {
-    const shift = await resolveShiftForUser(u.id)
+    const shift = shifts.get(u.id)!
     const joined = dayKey(u.joiningDate)
     const mine = reqsByUser.get(u.id) ?? []
     for (const day of days) {

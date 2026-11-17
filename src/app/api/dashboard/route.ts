@@ -4,7 +4,7 @@ import { requireSession, guard, ok, fail } from '@/lib/hrms/api-utils'
 import { visibleUserIds } from '@/lib/hrms/rbac'
 import { addDaysKey, todayKey, fmtDateKey, monthRangeKeys } from '@/lib/hrms/dates'
 import { ROLES, isOrgAdmin, isOversightOnly, isAccountsRole, WORKED_STATUS_SET, NON_WORKING_STATUSES } from '@/lib/hrms/constants'
-import { departmentMatrix, rosterFor, computeStats } from '@/lib/hrms/org-stats'
+import { departmentMatrixWithOrg, rosterFor } from '@/lib/hrms/org-stats'
 import { ensureLeaveBalances } from '@/lib/hrms/leave-balances'
 import { resolveShiftForUser } from '@/lib/hrms/attendance-engine'
 import { cleanMonth } from '@/lib/hrms/sanitize'
@@ -83,29 +83,29 @@ export async function GET(req: NextRequest) {
 
     // ── Role-specific payloads ──
     if (isOrgAdmin(session.role)) {
-      // org-wide trend across ALL active users (admins have no personal logs)
-      const orgIdsAll = (await db.user.findMany({ where: { isActive: true, role: { not: 'SUPER_ADMIN' } }, select: { id: true } })).map((u) => u.id)
-      const orgLogs = await db.attendanceLog.findMany({ where: { userId: { in: orgIdsAll }, dateKey: { gte: from, lte: to } } })
+      // org-wide trend across ALL active users (admins have no personal logs), aggregated per day IN SQL
+      const { departments, org: orgStats } = await departmentMatrixWithOrg(month)
+      const orgDays = await db.attendanceLog.groupBy({
+        by: ['dateKey', 'status'],
+        where: { dateKey: { gte: from, lte: to }, user: { isActive: true, role: { not: 'SUPER_ADMIN' } } },
+        _count: { _all: true }, _sum: { lateMinutes: true, shortMinutes: true },
+      })
       const orgByDay = new Map<string, { late: number; n: number; short: number; inMin: number }>()
-      for (const l of orgLogs) {
-        const curD = orgByDay.get(l.dateKey) ?? { late: 0, n: 0, short: 0, inMin: 0 }
-        if (!NON_WORKING_STATUSES.includes(l.status as never) && l.status !== 'FULL_LEAVE' && l.status !== 'ABSENT') {
-          curD.late += l.lateMinutes
-          curD.n += 1
-          if (l.checkIn) {
-            const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(l.checkIn)
-            curD.inMin = Number(parts.find((p) => p.type === 'hour')?.value ?? 0) * 60 + Number(parts.find((p) => p.type === 'minute')?.value ?? 0)
-          }
+      for (const g of orgDays) {
+        const curD = orgByDay.get(g.dateKey) ?? { late: 0, n: 0, short: 0, inMin: 0 }
+        if (!NON_WORKING_STATUSES.includes(g.status as never) && g.status !== 'FULL_LEAVE' && g.status !== 'ABSENT') {
+          curD.late += g._sum.lateMinutes ?? 0
+          curD.n += g._count._all
         }
-        curD.short += l.shortMinutes
-        orgByDay.set(l.dateKey, curD)
+        curD.short += g._sum.shortMinutes ?? 0
+        orgByDay.set(g.dateKey, curD)
       }
-      const orgTrend = buildTrend(from, to, orgByDay)
-      const departments = await departmentMatrix(month)
-      const orgIds = (await db.user.findMany({ where: { isActive: true, role: { not: 'SUPER_ADMIN' } }, select: { id: true } })).map((u) => u.id)
-      const orgStats = await computeStats(month, orgIds)
-      const pendingLeave = await db.request.count({ where: { status: { in: ['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR'] } } })
-      const pendingAtt = await db.attendanceRequest.count({ where: { status: { in: ['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR'] } } })
+      // an org-wide "check-in minute" is not meaningful (it used to be whichever row came last) → null
+      const orgTrend = buildTrend(from, to, orgByDay).map((t) => ({ ...t, checkInMin: null }))
+      const [pendingLeave, pendingAtt] = await Promise.all([
+        db.request.count({ where: { status: { in: ['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR'] } } }),
+        db.attendanceRequest.count({ where: { status: { in: ['PENDING_TEAM_LEAD', 'PENDING_MANAGER', 'PENDING_HR'] } } }),
+      ])
       return ok({
         kind: 'org',
         month,

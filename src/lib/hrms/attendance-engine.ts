@@ -2,6 +2,7 @@ import 'server-only'
 import { db } from '@/lib/db'
 import { ATT_STATUS } from '@/lib/hrms/constants'
 import { dayKey, dateTimeFor, minutesSinceMidnightKarachi, weekdayOf, eachDayKey } from '@/lib/hrms/dates'
+import { memo } from '@/lib/hrms/memo'
 
 // ─── Shift resolution: user → team → department → global default ─────────────
 
@@ -30,13 +31,8 @@ export const DEFAULT_SHIFT: ResolvedShift = {
   workingDays: [1, 2, 3, 4, 5],
 }
 
-export async function resolveShiftForUser(userId: string): Promise<ResolvedShift> {
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    include: { shift: true, team: { include: { shift: true } }, department: { include: { shift: true } } },
-  })
-  const shift = user?.shift ?? user?.team?.shift ?? user?.department?.shift
-  if (!shift) return DEFAULT_SHIFT
+type ShiftRow = { id: string; name: string; startTime: string; endTime: string; expectedMinutes: number; graceMinutes: number; workingDays: string }
+function toResolved(shift: ShiftRow): ResolvedShift {
   return {
     id: shift.id, name: shift.name,
     startTime: shift.startTime, endTime: shift.endTime,
@@ -45,13 +41,38 @@ export async function resolveShiftForUser(userId: string): Promise<ResolvedShift
   }
 }
 
+export async function resolveShiftForUser(userId: string): Promise<ResolvedShift> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { shift: true, team: { include: { shift: true } }, department: { include: { shift: true } } },
+  })
+  const shift = user?.shift ?? user?.team?.shift ?? user?.department?.shift
+  return shift ? toResolved(shift) : DEFAULT_SHIFT
+}
+
+/** Same user → team → department → default resolution for MANY users in ONE query (loops used to pay one query per user). */
+export async function resolveShiftsForUsers(userIds: string[]): Promise<Map<string, ResolvedShift>> {
+  const out = new Map<string, ResolvedShift>()
+  if (!userIds.length) return out
+  const users = await db.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, shift: true, team: { select: { shift: true } }, department: { select: { shift: true } } },
+  })
+  for (const u of users) {
+    const shift = u.shift ?? u.team?.shift ?? u.department?.shift
+    out.set(u.id, shift ? toResolved(shift) : DEFAULT_SHIFT)
+  }
+  for (const id of userIds) if (!out.has(id)) out.set(id, DEFAULT_SHIFT)
+  return out
+}
+
 export function isoWeekdayOf(dateKey: string): number {
   const w = weekdayOf(dateKey)
   return w === 0 ? 7 : w
 }
 
 export async function holidayKeysFor(): Promise<Set<string>> {
-  const rows = await db.holiday.findMany()
+  const rows = await memo('holidays', () => db.holiday.findMany())
   return new Set(rows.map((h) => h.date))
 }
 
@@ -157,39 +178,50 @@ export async function upsertLogFromComputed(
   })
 }
 
-/** Group raw punches by (user, day) and rebuild each day's record. */
+/** Group raw punches by (user, day) and rebuild each day's record. Reads are batched: ~5 queries per push, not ~4 per user-day. */
 export async function applyPunches(punches: { pin: string; ts: Date; status: number | null }[], source = 'BIOMETRIC'): Promise<{ processed: number; skipped: number; days: number }> {
   const holidays = await holidayKeysFor()
-  const usersByPin = new Map<string, { id: string }>()
+  const pins = [...new Set(punches.map((p) => p.pin))]
+  const found = pins.length ? await db.user.findMany({ where: { employeeCode: { in: pins } }, select: { id: true, employeeCode: true } }) : []
+  const idByPin = new Map(found.map((u) => [u.employeeCode, u.id]))
   const byUserDay = new Map<string, typeof punches>()
 
   for (const p of punches) {
-    if (!usersByPin.has(p.pin)) {
-      const u = await db.user.findUnique({ where: { employeeCode: p.pin }, select: { id: true } })
-      usersByPin.set(p.pin, u ?? { id: '' })
-    }
-    const user = usersByPin.get(p.pin)!
-    if (!user.id) continue
-    const dateKey = dayKey(p.ts)
-    const key = `${user.id}|${dateKey}`
+    const userId = idByPin.get(p.pin)
+    if (!userId) continue
+    const key = `${userId}|${dayKey(p.ts)}`
     if (!byUserDay.has(key)) byUserDay.set(key, [])
     byUserDay.get(key)!.push(p)
+  }
+  if (!byUserDay.size) return { processed: punches.length, skipped: punches.length, days: 0 }
+
+  const userIds = [...new Set([...byUserDay.keys()].map((k) => k.split('|')[0]))]
+  const dateKeys = [...new Set([...byUserDay.keys()].map((k) => k.split('|')[1]))].sort()
+  const rangeStart = dateTimeFor(dateKeys[0], '00:00')
+  const rangeEnd = new Date(dateTimeFor(dateKeys[dateKeys.length - 1], '00:00').getTime() + 86_400_000)
+  const [existingLogs, storedAll, shifts] = await Promise.all([
+    db.attendanceLog.findMany({ where: { userId: { in: userIds }, dateKey: { in: dateKeys } }, select: { userId: true, dateKey: true, isManuallyUpdated: true } }),
+    db.biometricPunch.findMany({ where: { userId: { in: userIds }, ts: { gte: rangeStart, lt: rangeEnd } }, select: { userId: true, ts: true, status: true } }),
+    resolveShiftsForUsers(userIds),
+  ])
+  const manual = new Set(existingLogs.filter((l) => l.isManuallyUpdated).map((l) => `${l.userId}|${l.dateKey}`))
+  const storedBy = new Map<string, { ts: Date; status: number | null }[]>()
+  for (const r of storedAll) {
+    if (!r.userId) continue
+    const k = `${r.userId}|${dayKey(r.ts)}`
+    const a = storedBy.get(k)
+    if (a) a.push({ ts: r.ts, status: r.status }); else storedBy.set(k, [{ ts: r.ts, status: r.status }])
   }
 
   let days = 0
   for (const [key, group] of byUserDay) {
     const [userId, dateKey] = key.split('|')
     // never clobber an HR adjustment / approved regularization with raw device data
-    const existing = await db.attendanceLog.findUnique({ where: { userId_dateKey: { userId, dateKey } }, select: { isManuallyUpdated: true } })
-    if (existing?.isManuallyUpdated) continue
+    if (manual.has(key)) continue
     // rebuild from EVERY stored punch of the day: a later batch may carry only the check-out
-    const dayStart = dateTimeFor(dateKey, '00:00')
-    const stored = await db.biometricPunch.findMany({
-      where: { userId, ts: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) } },
-      select: { ts: true, status: true },
-    })
+    const stored = storedBy.get(key) ?? []
     const dayPunches = stored.length ? stored : group
-    const shift = await resolveShiftForUser(userId)
+    const shift = shifts.get(userId)!
     const computed = computeFromPunches(dateKey, dayPunches.map((g) => ({ ts: g.ts, status: g.status })), shift, holidays)
     await upsertLogFromComputed(userId, dateKey, computed, shift, { source })
     days++

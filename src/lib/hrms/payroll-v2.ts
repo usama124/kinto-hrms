@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { SHORT_HOUR_STATUSES, WORKED_STATUS_SET } from '@/lib/hrms/constants'
 import { getRules } from '@/lib/hrms/policy'
-import { resolveShiftForUser, holidayKeysFor } from '@/lib/hrms/attendance-engine'
+import { resolveShiftsForUsers, holidayKeysFor } from '@/lib/hrms/attendance-engine'
 import { monthStart, monthEnd, monthRangeKeys } from '@/lib/hrms/dates'
 
 export type PayrollConfig = {
@@ -129,15 +129,35 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
 
   const calc: DetailedCalc[] = []
 
+  // Prefetch everything the per-employee loop needs in 5 queries (it used to run ~6 queries PER employee).
+  const ids = users.map((u) => u.id)
+  const [shifts, allLogs, allLeaves, allAdj, allLoans] = await Promise.all([
+    resolveShiftsForUsers(ids),
+    db.attendanceLog.findMany({ where: { userId: { in: ids }, dateKey: { gte: fromKey, lte: toKey } } }),
+    db.request.findMany({
+      where: { userId: { in: ids }, type: 'LEAVE', status: 'APPROVED', isShortLeave: false, startDate: { lte: me }, endDate: { gte: ms } },
+      include: { leaveType: true },
+    }),
+    db.monthlyAdjustment.findMany({ where: { userId: { in: ids }, month } }),
+    db.loan.findMany({ where: { userId: { in: ids }, isActive: true }, orderBy: { createdAt: 'asc' } }),
+  ])
+  const group = <T extends { userId: string }>(rows: T[]) => {
+    const m = new Map<string, T[]>()
+    for (const r of rows) { const a = m.get(r.userId); if (a) a.push(r); else m.set(r.userId, [r]) }
+    return m
+  }
+  const logsBy = group(allLogs), leavesBy = group(allLeaves), loansBy = group(allLoans)
+  const adjBy = new Map(allAdj.map((a) => [a.userId, a]))
+
   for (const u of users) {
-    const shift = await resolveShiftForUser(u.id)
+    const shift = shifts.get(u.id)!
 
     // shift-aware scheduled working days for this month
     const workingDays = countWorkingDays(month, shift.workingDays, holidays)
     const dayRate = workingDays > 0 ? (u.baseSalary + u.hrAllowance + u.utilityAllowance) / workingDays : 0
     const hourlyRate = workingDays > 0 ? dayRate / (shift.expectedMinutes / 60) : 0
 
-    const logs = await db.attendanceLog.findMany({ where: { userId: u.id, dateKey: { gte: fromKey, lte: toKey } } })
+    const logs = logsBy.get(u.id) ?? []
     const shortMinutes = logs
       .filter((l) => (SHORT_HOUR_STATUSES as readonly string[]).includes(l.status))
       .reduce((s, l) => s + l.shortMinutes, 0)
@@ -146,13 +166,7 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
     const absentUninformed = logs.filter((l) => l.status === 'ABSENT').length
 
     // paid / unpaid approved leaves overlapping the month
-    const leaves = await db.request.findMany({
-      where: {
-        userId: u.id, type: 'LEAVE', status: 'APPROVED', isShortLeave: false,
-        startDate: { lte: me }, endDate: { gte: ms },
-      },
-      include: { leaveType: true },
-    })
+    const leaves = leavesBy.get(u.id) ?? []
     let paidLeaves = 0
     let unpaidLeaveDays = 0
     for (const r of leaves) {
@@ -178,7 +192,7 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
       : round2(remainingEquivalent * dayRate)
 
     // bonus / arrears
-    const adj = await db.monthlyAdjustment.findUnique({ where: { userId_month: { userId: u.id, month } } })
+    const adj = adjBy.get(u.id)
     const bonus = adj?.bonus ?? 0
     const arrears = adj?.arrears ?? 0
 
@@ -190,7 +204,7 @@ export async function calculateMonthDetailed(month: string): Promise<{ calc: Det
     const grossPay = baseGross + pf
 
     // loan installment (first active loan with remaining installments)
-    const activeLoans = await db.loan.findMany({ where: { userId: u.id, isActive: true }, orderBy: { createdAt: 'asc' } })
+    const activeLoans = loansBy.get(u.id) ?? []
     const loan = activeLoans.find((l) => l.paidInstallments < l.installments) ?? null
     let internalLoan = 0
     let loanStatus: DetailedCalc['loanStatus'] = null

@@ -1,7 +1,5 @@
-import { DB_PROVIDER } from '@/lib/db'
-
-/** True when running on Turso/libSQL (SQLite dialect). */
-export const isSqlite = DB_PROVIDER === 'turso'
+/** True when running on Turso/libSQL (SQLite dialect). Same rule as src/lib/db.ts (kept dependency-free so it works when db is mocked). */
+export const isSqlite = ['turso', 'libsql'].includes((process.env.DB_PROVIDER ?? 'postgres').trim().toLowerCase())
 
 /**
  * `createMany({ skipDuplicates })` is not supported by SQLite. Fast path: one createMany; if a duplicate makes the

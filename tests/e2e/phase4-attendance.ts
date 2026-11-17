@@ -197,7 +197,10 @@ export async function phase4() {
   check(again2.status === 200 && again2.json.created === 0, 'running the sync twice is idempotent', JSON.stringify(again2.json))
   const holidayRows = await db.attendanceLog.count({ where: { dateKey: { in: [...ctx.holidays] }, source: 'SYSTEM' } })
   eq(holidayRows, 0, 'the sync never creates absences on holidays')
-  const weekendRows = await db.attendanceLog.count({ where: { source: 'SYSTEM', dateKey: { in: [addDays(days[4], 1), addDays(days[4], 2)] } } })
+  // real Sat/Sun dates inside the synced range (don't assume days[4] is a Friday)
+  const weekendKeys: string[] = []
+  for (let d = days[0]; d <= days[8]; d = addDays(d, 1)) { const w = new Date(d + 'T12:00:00Z').getUTCDay(); if (w === 0 || w === 6) weekendKeys.push(d) }
+  const weekendRows = await db.attendanceLog.count({ where: { source: 'SYSTEM', dateKey: { in: weekendKeys } } })
   eq(weekendRows, 0, 'the sync never creates absences on weekends')
 
   // ── web punch ───────────────────────────────────────────────────────────────

@@ -21,7 +21,8 @@ function resolveProvider(): DbProvider {
 export const DB_PROVIDER: DbProvider = resolveProvider()
 
 function createClient(): PrismaClient {
-  const log: ['error'] = ['error']
+  // PRISMA_LOG_QUERIES=1 exposes query events (db.$on('query')) for profiling / query-count tests; off by default
+  const log = (process.env.PRISMA_LOG_QUERIES === '1' ? [{ emit: 'event', level: 'query' }, 'error'] : ['error']) as ['error']
   if (DB_PROVIDER === 'turso') {
     const url = process.env.TURSO_DATABASE_URL?.trim()
     if (!url) throw new Error('DB_PROVIDER=turso requires TURSO_DATABASE_URL (libsql://<db>-<org>.turso.io, or file:./local.db for local development).')

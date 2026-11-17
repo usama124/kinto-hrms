@@ -10,15 +10,15 @@ datasource db {
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Department {
-  id          String  @id @default(cuid())
-  name        String  @unique
-  code        String  @unique
-  description String?
-  isActive    Boolean @default(true) // inactive = hidden from pickers; existing people/history are untouched
-  managerId   String? // department head (MANAGER role user)
-  manager   User?  @relation("DeptManager", fields: [managerId], references: [id])
-  shiftId   String? // default shift for the department
-  shift     Shift? @relation("DeptShift", fields: [shiftId], references: [id])
+  id           String        @id @default(cuid())
+  name         String        @unique
+  code         String        @unique
+  description  String?
+  isActive     Boolean       @default(true) // inactive = hidden from pickers; existing people/history are untouched
+  managerId    String? // department head (MANAGER role user)
+  manager      User?         @relation("DeptManager", fields: [managerId], references: [id])
+  shiftId      String? // default shift for the department
+  shift        Shift?        @relation("DeptShift", fields: [shiftId], references: [id])
   users        User[]
   teams        Team[]
   designations Designation[]
@@ -64,15 +64,15 @@ model Team {
 }
 
 model Shift {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   name            String
   startTime       String // "09:00" — HH:mm in Karachi
   endTime         String // "18:00"
-  breakMinutes    Int      @default(60)
-  graceMinutes    Int      @default(15)
-  expectedMinutes Int      @default(540)
-  workingDays     String   @default("[1,2,3,4,5]") // JSON array of ISO weekdays 1=Mon..7=Sun
-  isActive        Boolean  @default(true)
+  breakMinutes    Int          @default(60)
+  graceMinutes    Int          @default(15)
+  expectedMinutes Int          @default(540)
+  workingDays     String       @default("[1,2,3,4,5]") // JSON array of ISO weekdays 1=Mon..7=Sun
+  isActive        Boolean      @default(true)
   users           User[]
   departments     Department[] @relation("DeptShift")
   teams           Team[]       @relation("TeamShift")
@@ -93,99 +93,107 @@ model Setting {
 // ─── People ───────────────────────────────────────────────────────────────────
 
 model User {
-  id               String   @id @default(cuid())
-  email            String   @unique
-  passwordHash     String
-  fullName         String
-  fatherName       String?
-  motherName       String?
-  phone            String?
-  personalEmail    String?
-  cnic             String?
-  cnicExpiry       String? // "YYYY-MM-DD"
-  drivingLicense   String?
-  passportNo       String?
-  passportExpiry   String? // "YYYY-MM-DD"
-  dateOfBirth      DateTime?
-  gender           String? // Male | Female
-  maritalStatus    String? // Single | Married | Divorced | Widowed
-  bloodGroup       String?
-  religion         String?
-  nationality      String?
+  id                    String       @id @default(cuid())
+  email                 String       @unique
+  passwordHash          String
+  fullName              String
+  fatherName            String?
+  motherName            String?
+  phone                 String?
+  personalEmail         String?
+  cnic                  String?
+  cnicExpiry            String? // "YYYY-MM-DD"
+  drivingLicense        String?
+  passportNo            String?
+  passportExpiry        String? // "YYYY-MM-DD"
+  dateOfBirth           DateTime?
+  gender                String? // Male | Female
+  maritalStatus         String? // Single | Married | Divorced | Widowed
+  bloodGroup            String?
+  religion              String?
+  nationality           String?
   emergencyContactName  String?
   emergencyContactPhone String?
-  address          String?
-  role             String // SUPER_ADMIN | HR_MANAGER | ACCOUNTANT | MANAGER | TEAM_LEAD | EMPLOYEE
-  employeeCode     String   @unique // ZKTeco PIN
-  designation      String // display name (denormalised from designationRef so payslips/reports keep working)
-  designationId    String? // link into the company Designation structure; null = legacy free-text title
-  designationRef   Designation? @relation(fields: [designationId], references: [id])
-  departmentId     String?
-  department       Department? @relation(fields: [departmentId], references: [id])
-  teamId           String?
-  team             Team?    @relation(fields: [teamId], references: [id])
-  teamLeadId       String? // first approver
-  teamLead         User?    @relation("TeamLeadLink", fields: [teamLeadId], references: [id])
-  directs          User[]   @relation("TeamLeadLink")
-  managerId        String? // second approver / department head
-  manager          User?    @relation("ManagerLink", fields: [managerId], references: [id])
-  managedUsers     User[]   @relation("ManagerLink")
-  shiftId          String?
-  shift            Shift?   @relation(fields: [shiftId], references: [id])
-  joiningDate      DateTime
-  employmentStatus String   @default("Permanent") // Permanent | Probation | Contract | Internship
-  avatarColor      String   @default("#0D9488")
-  avatarUploadId   String? // Upload.id of the profile picture (PNG/JPEG); null → coloured initials
-  baseSalary       Float    @default(0)
-  hrAllowance      Float    @default(0)
-  utilityAllowance Float    @default(0)
-  bankName         String?
-  bankIban         String?
-  isActive         Boolean  @default(true)
+  address               String?
+  role                  String // SUPER_ADMIN | HR_MANAGER | ACCOUNTANT | MANAGER | TEAM_LEAD | EMPLOYEE
+  employeeCode          String       @unique // ZKTeco PIN
+  designation           String // display name (denormalised from designationRef so payslips/reports keep working)
+  designationId         String? // link into the company Designation structure; null = legacy free-text title
+  designationRef        Designation? @relation(fields: [designationId], references: [id])
+  departmentId          String?
+  department            Department?  @relation(fields: [departmentId], references: [id])
+  teamId                String?
+  team                  Team?        @relation(fields: [teamId], references: [id])
+  teamLeadId            String? // first approver
+  teamLead              User?        @relation("TeamLeadLink", fields: [teamLeadId], references: [id])
+  directs               User[]       @relation("TeamLeadLink")
+  managerId             String? // second approver / department head
+  manager               User?        @relation("ManagerLink", fields: [managerId], references: [id])
+  managedUsers          User[]       @relation("ManagerLink")
+  shiftId               String?
+  shift                 Shift?       @relation(fields: [shiftId], references: [id])
+  joiningDate           DateTime
+  employmentStatus      String       @default("Permanent") // Permanent | Probation | Contract | Internship
+  avatarColor           String       @default("#0D9488")
+  avatarUploadId        String? // Upload.id of the profile picture (PNG/JPEG); null → coloured initials
+  baseSalary            Float        @default(0)
+  hrAllowance           Float        @default(0)
+  utilityAllowance      Float        @default(0)
+  bankName              String?
+  bankIban              String?
+  isActive              Boolean      @default(true)
 
   // Set when an admin issues a temporary password; every feature endpoint stays locked (403) until the user picks their own
   mustChangePassword Boolean @default(false)
 
   // MFA & anti-abuse
-  mfaEnabled     Boolean @default(false)
+  mfaEnabled     Boolean   @default(false)
   mfaSecret      String? // base32
   backupCodes    String? // JSON array of sha256 hashes
-  failedAttempts Int     @default(0)
+  failedAttempts Int       @default(0)
   lockedUntil    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  attendanceLogs   AttendanceLog[]
-  attendanceAudits AttendanceAudit[]    @relation("AttendanceAdmin")
-  requests         Request[]
-  attRequests      AttendanceRequest[]
-  attApprovals     AttendanceApproval[] @relation("AttApprover")
-  balances         LeaveBalance[]
-  approvalsGiven   ApprovalLog[]
-  payslips         Payslip[]
-  payrollRuns      PayrollRun[]
-  loans            Loan[]
-  adjustments      MonthlyAdjustment[]
-  uploads          Upload[]
-  notifications    Notification[]
-  refreshTokens    RefreshToken[]
-  biometricPunches BiometricPunch[]
-  teamsLed         Team[] @relation("TeamLeadOfTeam")
-  managedDepartments Department[] @relation("DeptManager")
+  attendanceLogs     AttendanceLog[]
+  attendanceAudits   AttendanceAudit[]    @relation("AttendanceAdmin")
+  requests           Request[]
+  attRequests        AttendanceRequest[]
+  attApprovals       AttendanceApproval[] @relation("AttApprover")
+  balances           LeaveBalance[]
+  approvalsGiven     ApprovalLog[]
+  payslips           Payslip[]
+  payrollRuns        PayrollRun[]
+  loans              Loan[]
+  adjustments        MonthlyAdjustment[]
+  uploads            Upload[]
+  notifications      Notification[]
+  refreshTokens      RefreshToken[]
+  biometricPunches   BiometricPunch[]
+  teamsLed           Team[]               @relation("TeamLeadOfTeam")
+  managedDepartments Department[]         @relation("DeptManager")
+
+  @@index([departmentId, isActive])
+  @@index([teamId])
+  @@index([teamLeadId, isActive])
+  @@index([managerId, isActive])
+  @@index([isActive, role])
+  @@index([designationId])
+  @@index([shiftId])
 }
 
 // ─── Leave & Requests ─────────────────────────────────────────────────────────
 
 model LeaveType {
-  id                  String  @id @default(cuid())
-  name                String  @unique
-  code                String  @unique
-  annualQuota         Float   @default(0)
-  colorCode           String  @default("#64748B")
+  id                  String         @id @default(cuid())
+  name                String         @unique
+  code                String         @unique
+  annualQuota         Float          @default(0)
+  colorCode           String         @default("#64748B")
   monthlyCap          Int? // hard rule: max days per calendar month (0/null = unlimited)
   attachmentThreshold Int? // rule: beyond N availed days in month, require certificate
-  isPaid              Boolean @default(true)
+  isPaid              Boolean        @default(true)
   balances            LeaveBalance[]
   requests            Request[]
 }
@@ -208,25 +216,30 @@ model LeaveBalance {
 }
 
 model Request {
-  id             String     @id @default(cuid())
-  userId         String
-  user           User       @relation(fields: [userId], references: [id])
-  type           String // LEAVE | OFFICIAL_DUTY | TRAVEL
-  leaveTypeId    String?
-  leaveType      LeaveType? @relation(fields: [leaveTypeId], references: [id])
-  startDate      DateTime
-  endDate        DateTime
-  isShortLeave   Boolean    @default(false)
-  shortHours     Float      @default(0)
-  dayCount       Float      @default(1)
-  reason         String
-  attachmentId   String? // Upload.id — medical certificate etc.
-  attachment     Upload?    @relation(fields: [attachmentId], references: [id])
-  status         String     @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
-  currentStage   String     @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  approvals      ApprovalLog[]
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  type         String // LEAVE | OFFICIAL_DUTY | TRAVEL
+  leaveTypeId  String?
+  leaveType    LeaveType?    @relation(fields: [leaveTypeId], references: [id])
+  startDate    DateTime
+  endDate      DateTime
+  isShortLeave Boolean       @default(false)
+  shortHours   Float         @default(0)
+  dayCount     Float         @default(1)
+  reason       String
+  attachmentId String? // Upload.id — medical certificate etc.
+  attachment   Upload?       @relation(fields: [attachmentId], references: [id])
+  status       String        @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
+  currentStage String        @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  approvals    ApprovalLog[]
+
+  @@index([userId, status])
+  @@index([status, currentStage])
+  @@index([userId, createdAt])
+  @@index([leaveTypeId])
 }
 
 model ApprovalLog {
@@ -239,34 +252,39 @@ model ApprovalLog {
   action     String // APPROVED | REJECTED
   comment    String?
   createdAt  DateTime @default(now())
+
+  @@index([requestId])
+  @@index([approverId])
 }
 
 // ─── Attendance ───────────────────────────────────────────────────────────────
 
 model AttendanceLog {
-  id                String    @id @default(cuid())
+  id                String            @id @default(cuid())
   userId            String
-  user              User      @relation(fields: [userId], references: [id])
+  user              User              @relation(fields: [userId], references: [id])
   dateKey           String // "YYYY-MM-DD"
   checkIn           DateTime?
   checkOut          DateTime?
   status            String // PRESENT | MISSING | ABSENT | SHORT_DURATION | DAY_OFF | WFH | FULL_LEAVE | SHORT_LEAVE | OFFICIAL_DUTY | TRAVEL | WEEKEND | HOLIDAY
-  expectedMinutes   Int       @default(0)
-  workedMinutes     Int       @default(0)
-  shortMinutes      Int       @default(0)
-  lateMinutes       Int       @default(0)
-  earlyMinutes      Int       @default(0)
-  breakMinutes      Int       @default(0)
-  isWFH             Boolean   @default(false)
-  isManuallyUpdated Boolean   @default(false)
-  source            String    @default("AUTO") // AUTO | BIOMETRIC | MANUAL | SYSTEM
+  expectedMinutes   Int               @default(0)
+  workedMinutes     Int               @default(0)
+  shortMinutes      Int               @default(0)
+  lateMinutes       Int               @default(0)
+  earlyMinutes      Int               @default(0)
+  breakMinutes      Int               @default(0)
+  isWFH             Boolean           @default(false)
+  isManuallyUpdated Boolean           @default(false)
+  source            String            @default("AUTO") // AUTO | BIOMETRIC | MANUAL | SYSTEM
   notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   breaks            BreakLog[]
   audits            AttendanceAudit[]
 
   @@unique([userId, dateKey])
+  @@index([dateKey])
+  @@index([dateKey, status])
 }
 
 model BreakLog {
@@ -276,6 +294,8 @@ model BreakLog {
   startTime    DateTime
   endTime      DateTime?
   minutes      Int           @default(0)
+
+  @@index([attendanceId])
 }
 
 model AttendanceAudit {
@@ -289,23 +309,29 @@ model AttendanceAudit {
   newValue     String?
   reason       String
   createdAt    DateTime      @default(now())
+
+  @@index([attendanceId])
 }
 
 // ─── 3-Tier Manual Attendance Regularization ──────────────────────────────────
 
 model AttendanceRequest {
-  id                String   @id @default(cuid())
+  id                String               @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id])
+  user              User                 @relation(fields: [userId], references: [id])
   date              String // "YYYY-MM-DD"
   requestedCheckIn  String // "HH:mm"
   requestedCheckOut String // "HH:mm"
   reason            String
-  status            String   @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
-  currentStage      String   @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  status            String               @default("PENDING_TEAM_LEAD") // PENDING_TEAM_LEAD | PENDING_MANAGER | PENDING_HR | APPROVED | REJECTED
+  currentStage      String               @default("TEAM_LEAD") // TEAM_LEAD | MANAGER | HR | DONE
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   approvals         AttendanceApproval[]
+
+  @@index([userId, status])
+  @@index([status, currentStage])
+  @@index([userId, createdAt])
 }
 
 model AttendanceApproval {
@@ -318,6 +344,9 @@ model AttendanceApproval {
   action     String // APPROVED | REJECTED
   comment    String?
   createdAt  DateTime          @default(now())
+
+  @@index([requestId])
+  @@index([approverId])
 }
 
 // ─── Biometric (ZKTeco K50 / ADMS push) ───────────────────────────────────────
@@ -337,6 +366,8 @@ model BiometricPunch {
   createdAt DateTime @default(now())
 
   @@index([pin, ts])
+  @@index([userId, ts])
+  @@index([ts])
 }
 
 // ─── Policy Rules Engine ──────────────────────────────────────────────────────
@@ -369,11 +400,11 @@ model PayrollRun {
 }
 
 model Payslip {
-  id                        String     @id @default(cuid())
-  runId                     String
-  run                       PayrollRun @relation(fields: [runId], references: [id])
-  userId                    String
-  user                      User       @relation(fields: [userId], references: [id])
+  id     String     @id @default(cuid())
+  runId  String
+  run    PayrollRun @relation(fields: [runId], references: [id])
+  userId String
+  user   User       @relation(fields: [userId], references: [id])
 
   // snapshot
   employeeCode     String
@@ -381,9 +412,9 @@ model Payslip {
   fatherName       String?
   designation      String
   departmentName   String
-  employmentStatus String   @default("Permanent")
+  employmentStatus String    @default("Permanent")
   joiningDate      DateTime?
-  paymentMode      String   @default("Bank Transfer")
+  paymentMode      String    @default("Bank Transfer")
 
   // attendance aggregates
   workingDays               Int   @default(0)
@@ -423,6 +454,7 @@ model Payslip {
   createdAt DateTime @default(now())
 
   @@unique([runId, userId])
+  @@index([userId])
 }
 
 model Loan {
@@ -437,15 +469,17 @@ model Loan {
   startDate         String // "YYYY-MM"
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
+
+  @@index([userId])
 }
 
 model MonthlyAdjustment {
-  id      String @id @default(cuid())
+  id      String  @id @default(cuid())
   userId  String
-  user    User   @relation(fields: [userId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
   month   String // "YYYY-MM"
-  bonus   Float  @default(0)
-  arrears Float  @default(0)
+  bonus   Float   @default(0)
+  arrears Float   @default(0)
   note    String?
 
   @@unique([userId, month])
@@ -470,15 +504,17 @@ model RefreshToken {
 }
 
 model Upload {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   name         String // original filename (sanitized)
   mime         String
   size         Int
   path         String // storage path (random UUID filename)
   uploadedById String
-  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
   requests     Request[] // documents attached to leave requests
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
+
+  @@index([uploadedById])
 }
 
 // ─── Notifications & Audit ────────────────────────────────────────────────────
@@ -492,6 +528,9 @@ model Notification {
   type      String   @default("INFO") // INFO | APPROVAL | PAYROLL | ALERT | SECURITY
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 model AuditLog {
@@ -514,4 +553,6 @@ model AuditLog {
   @@index([entityType])
   @@index([targetUserId])
   @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([targetUserId, createdAt])
 }

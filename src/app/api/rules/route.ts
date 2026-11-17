@@ -5,6 +5,7 @@ import { isOrgAdmin, DEFAULT_RULES, POLICY_KEYS } from '@/lib/hrms/constants'
 import { writeAudit } from '@/lib/hrms/audit'
 import { cleanDateKey, cleanText } from '@/lib/hrms/sanitize'
 import { clientIp } from '@/lib/hrms/rate-limit'
+import { invalidateConfig } from '@/lib/hrms/memo'
 
 /** Admin-configurable HR rules + leave caps + holiday calendar. */
 export async function GET() {
@@ -118,6 +119,7 @@ export async function PUT(req: NextRequest) {
       if (holidayAdd) await tx.holiday.upsert({ where: { date: holidayAdd.date }, update: { name: holidayAdd.name }, create: holidayAdd })
       if (holidayRemove) await tx.holiday.deleteMany({ where: { date: holidayRemove } })
     })
+    invalidateConfig() // policy rules / holidays are cached (memo.ts)
 
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
@@ -153,6 +155,7 @@ export async function POST(req: NextRequest) {
     for (let i = 2; await db.policyRule.findUnique({ where: { key } }); i++) key = `${CUSTOM_PREFIX}${slug}-${i}`
 
     const rule = await db.policyRule.create({ data: { key, value, label, category } })
+    invalidateConfig()
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'RULE', entityId: key, fieldName: 'rule.added', newValue: `${label} = ${value}`,
@@ -173,6 +176,7 @@ export async function DELETE(req: NextRequest) {
     const rule = await db.policyRule.findUnique({ where: { key } })
     if (!rule) return fail('Rule not found.', 404)
     await db.policyRule.delete({ where: { key } })
+    invalidateConfig()
     await writeAudit({
       actorId: session.userId, actorName: session.fullName, actorRole: session.role,
       entityType: 'RULE', entityId: key, fieldName: 'rule.deleted', oldValue: `${rule.label} = ${rule.value}`,
